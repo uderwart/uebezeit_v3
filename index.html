@@ -1716,20 +1716,23 @@ function renderLesson(){
   var planHtml='<div class="card"><div class="stitle">Übeplan</div>';
   var cached=null;
   try{cached=JSON.parse(localStorage.getItem('uz-uebeplan'));}catch(e){}
-  if(cached&&(cached.plan||cached.text)){
-    var d=new Date(cached.date);
-    if(cached.plan&&Array.isArray(cached.plan)){
-      cached.plan.forEach(function(item){
-        planHtml+='<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px">'+
-          '<div><span style="font-weight:600">'+esc(item.piece||'')+'</span>'+(item.section?' · '+esc(item.section):'')+
-          (item.comment?' <span style="color:var(--muted);font-style:italic">'+esc(item.comment)+'</span>':'')+'</div>'+
-          '<div style="text-align:right;white-space:nowrap">'+(item.minutes?item.minutes+'\'':'')+' '+(item.bpm?item.bpm+' BPM':'')+'</div></div>';
-      });
-    }else if(cached.text){
-      planHtml+='<div style="font-size:13px;line-height:1.5;margin-bottom:8px">'+esc(cached.text).replace(/\n/g,'<br>')+'</div>';
+  try{
+    if(cached&&(cached.plan||cached.text)){
+      var d=new Date(cached.date);
+      if(cached.plan&&Array.isArray(cached.plan)){
+        cached.plan.forEach(function(item){
+          planHtml+='<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px">'+
+            '<div><span style="font-weight:600">'+esc(item.piece||'')+'</span>'+(item.section?' · '+esc(item.section):'')+
+            (item.comment?' <span style="color:var(--muted);font-style:italic">'+esc(item.comment)+'</span>':'')+'</div>'+
+            '<div style="text-align:right;white-space:nowrap">'+(item.minutes?item.minutes+'\'':'')+' '+(item.bpm?item.bpm+' BPM':'')+'</div></div>';
+        });
+      }else if(cached.text){
+        var shortText=cached.text.length>300?cached.text.substring(0,300)+'...':cached.text;
+        planHtml+='<div style="font-size:12px;line-height:1.4;margin-bottom:8px;max-height:120px;overflow:hidden;color:var(--muted)">'+esc(shortText).replace(/\n/g,'<br>')+'</div>';
+      }
+      planHtml+='<div style="font-size:10px;color:var(--muted);margin:8px 0">Erstellt '+d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})+'</div>';
     }
-    planHtml+='<div style="font-size:10px;color:var(--muted);margin:8px 0 8px">Erstellt '+d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})+'</div>';
-  }
+  }catch(e){cached=null;}
   planHtml+='<div style="display:flex;gap:8px;align-items:center">'+
     '<input type="number" id="plan-minutes" value="'+(settings.sessionMin||45)+'" placeholder="Min" style="width:70px;font-size:14px;padding:8px;text-align:center">'+
     '<button class="btn btn-go btn-sm" onclick="generateUebeplan()" id="plan-btn" style="flex:1">🤖 Übeplan erstellen</button>'+
