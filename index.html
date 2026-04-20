@@ -1978,13 +1978,12 @@ function generateUebeplan(){
     if(diff>0)daysToLesson='Nächster Unterricht in '+diff+' Tagen.';
   }
   
-  var prompt='Du bist ein erfahrener Gitarrenlehrer und Übe-Coach. Erstelle einen Übeplan für HEUTE.\n\n'+
-    'Der Schüler hat '+minutes+' Minuten Zeit.\n'+daysToLesson+'\n'+weekInfo+'\n\nStücke:\n'+pData+'\n\n'+
-    'WICHTIGE ÜBE-REGELN:\n- Max 10-15 Min pro Abschnitt\n- Abwechslung\n- Aufwärmen am Anfang\n- Schwieriges in die Mitte\n- Am Ende: Durchspielen\n\n'+
-    'ANTWORT NUR ALS JSON-ARRAY, kein anderer Text, keine Backticks:\n'+
-    '[{"pieceId":1,"piece":"Name","sectionIdx":0,"section":"Takte 1-4","minutes":10,"bpm":60,"comment":"Kurzer Tipp"},...]'+
-    '\n\nWenn ein Stück nicht in der Liste ist (z.B. Aufwärmen), setze pieceId auf 0.'+
-    '\nDie Summe der Minuten muss '+minutes+' ergeben. Maximal 6 Einträge.';
+  var prompt='Erstelle einen Gitarren-Übeplan. '+minutes+' Minuten Zeit. '+daysToLesson+' '+weekInfo+'\n\nStücke:\n'+pData+'\n\n'+
+    'Regeln: Max 10-15 Min pro Abschnitt, Abwechslung, Aufwärmen am Anfang, Schwieriges in der Mitte, Durchspielen am Ende.\n\n'+
+    'WICHTIG: Antworte AUSSCHLIESSLICH mit einem JSON-Array. Kein Text davor oder danach. Keine Markdown-Backticks. Nur das reine JSON-Array.\n\n'+
+    'Format: [{"pieceId":1,"piece":"Stückname","sectionIdx":0,"section":"Takte 1-4","minutes":10,"bpm":60,"comment":"Kurzer Tipp auf Deutsch"}]\n\n'+
+    'pieceId: Verwende die ID aus der Stücke-Liste oben. Wenn nicht vorhanden (z.B. Aufwärmen), setze pieceId auf 0.\n'+
+    'Summe der Minuten = '+minutes+'. Maximal 6 Einträge. Comment: 3-6 Worte, motivierend.';
   
   fetch('https://api.anthropic.com/v1/messages',{
     method:'POST',
@@ -2056,10 +2055,7 @@ function renderUebeplanCards(){
     return html;
   }
   
-  // Fallback: text plan
-  if(cached.text){
-    return html+'<div class="card" style="border-left:3px solid var(--accent2)"><div style="font-size:13px;line-height:1.5">'+esc(cached.text).replace(/\n/g,'<br>')+'</div></div>';
-  }
+  // Fallback: text plan - only show in lesson tab, not on home
   return '';
 }
 
