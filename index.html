@@ -626,6 +626,7 @@ function renderHome(){
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><span style="font-size:13px;font-weight:500">'+weekMin+' / '+settings.weeklyMin+' Min</span><span style="font-size:12px;color:var(--muted)">'+weekPct+'%</span></div>'+
       '<div class="progress-bar" style="height:8px"><div class="progress-fill" style="width:'+weekPct+'%"></div></div>'+
     '</div>'+
+    renderUebeplanCards()+
     '<button class="btn mt12" onclick="startPrimeTime()" style="width:100%;background:var(--accent-soft);color:var(--accent);border:1px solid var(--accent);font-size:15px;padding:14px"><span style="font-size:18px">✨</span> Prime Time</button>'+
     hwHtml+activeHtml+
     (hwPieces.length+activePieces.length===0?'<div class="empty"><div style="font-size:28px;margin-bottom:8px">🎸</div>Noch keine Stücke.<br>Lege dein erstes Stück an!</div>':'')+
@@ -1664,13 +1665,15 @@ function renderLesson(){
         '<div style="font-family:\'DM Serif Display\',serif;font-size:22px;'+countStyle+'">'+countText+'</div>'+
       '</div>'+
       '<div id="lesson-date-edit" style="display:none;margin-top:8px" onclick="event.stopPropagation()">'+
-        '<input type="datetime-local" value="'+nextVal+'" onchange="lesson.nextDate=this.value;save();renderLesson()" style="font-size:14px;padding:8px;width:100%">'+
+        '<div style="display:flex;gap:8px"><input type="date" value="'+(lesson.nextDate||'').substring(0,10)+'" onchange="updateLessonDate(this.value)" style="flex:1;font-size:14px;padding:8px">'+
+        '<input type="time" value="'+(lesson.nextDate||'').substring(11,16)||'12:00'+'" onchange="updateLessonTime(this.value)" style="width:100px;font-size:14px;padding:8px"></div>'+
       '</div>'+
     '</div>';
   }else{
     dateHtml='<div class="card" style="padding:14px">'+
       '<div class="stitle" style="margin:0 0 6px">Nächster Unterricht</div>'+
-      '<input type="datetime-local" onchange="lesson.nextDate=this.value;save();renderLesson()" style="font-size:14px;padding:8px">'+
+      '<div style="display:flex;gap:8px"><input type="date" onchange="updateLessonDate(this.value)" style="flex:1;font-size:14px;padding:8px">'+
+      '<input type="time" value="12:00" onchange="updateLessonTime(this.value)" style="width:100px;font-size:14px;padding:8px"></div>'+
     '</div>';
   }
   
@@ -1713,10 +1716,19 @@ function renderLesson(){
   var planHtml='<div class="card"><div class="stitle">Übeplan</div>';
   var cached=null;
   try{cached=JSON.parse(localStorage.getItem('uz-uebeplan'));}catch(e){}
-  if(cached&&cached.text){
+  if(cached&&(cached.plan||cached.text)){
     var d=new Date(cached.date);
-    planHtml+='<div style="font-size:13px;line-height:1.5;margin-bottom:8px">'+esc(cached.text).replace(/\n/g,'<br>')+'</div>'+
-      '<div style="font-size:10px;color:var(--muted);margin-bottom:8px">Erstellt '+d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})+'</div>';
+    if(cached.plan&&Array.isArray(cached.plan)){
+      cached.plan.forEach(function(item){
+        planHtml+='<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px">'+
+          '<div><span style="font-weight:600">'+esc(item.piece||'')+'</span>'+(item.section?' · '+esc(item.section):'')+
+          (item.comment?' <span style="color:var(--muted);font-style:italic">'+esc(item.comment)+'</span>':'')+'</div>'+
+          '<div style="text-align:right;white-space:nowrap">'+(item.minutes?item.minutes+'\'':'')+' '+(item.bpm?item.bpm+' BPM':'')+'</div></div>';
+      });
+    }else if(cached.text){
+      planHtml+='<div style="font-size:13px;line-height:1.5;margin-bottom:8px">'+esc(cached.text).replace(/\n/g,'<br>')+'</div>';
+    }
+    planHtml+='<div style="font-size:10px;color:var(--muted);margin:8px 0 8px">Erstellt '+d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})+'</div>';
   }
   planHtml+='<div style="display:flex;gap:8px;align-items:center">'+
     '<input type="number" id="plan-minutes" value="'+(settings.sessionMin||45)+'" placeholder="Min" style="width:70px;font-size:14px;padding:8px;text-align:center">'+
@@ -1798,6 +1810,20 @@ function renderLesson(){
   }
   
   el.innerHTML='<div class="stitle">Unterricht</div>'+dateHtml+hwHtml+planHtml+qHtml+fbHtml+sinceHtml+actionsHtml+archiveHtml;
+}
+
+function updateLessonDate(dateStr){
+  var cur=lesson.nextDate||'';
+  var time=cur.length>=16?cur.substring(11,16):'12:00';
+  lesson.nextDate=dateStr+'T'+time;
+  save();renderLesson();
+}
+
+function updateLessonTime(timeStr){
+  var cur=lesson.nextDate||'';
+  var date=cur.length>=10?cur.substring(0,10):new Date().toISOString().substring(0,10);
+  lesson.nextDate=date+'T'+timeStr;
+  save();renderLesson();
 }
 
 function addQuestion(){
@@ -1934,15 +1960,14 @@ function generateUebeplan(){
   }
   if(btn)btn.textContent='⏳ Erstelle Plan...';
   
-  // Collect piece data
+  // Collect piece data with IDs
   var pData=pieces.filter(function(p){return p.status!=='ruhend';}).map(function(p){
-    var secs=(p.sections||[]).map(function(s){
-      return s.name+': Ist '+getSecLast(p.name,s.name)+'/Ziel '+s.targetBpm+', Modus: '+s.mode;
+    var secs=(p.sections||[]).map(function(s,si){
+      return s.name+' (Index '+si+'): Ist '+getSecLast(p.name,s.name)+'/Ziel '+s.targetBpm+', Modus: '+s.mode;
     }).join(', ');
-    return p.name+' ('+p.cat+', '+p.status+'): '+secs;
+    return p.name+' (ID:'+p.id+', '+p.cat+', '+p.status+'): '+secs;
   }).join('\n');
   
-  // What was practiced this week
   var weekStart=getMonday();
   var weekSess=sessions.filter(function(s){return new Date(s.date)>=weekStart;});
   var weekInfo=weekSess.length?weekSess.length+' Sessions, '+weekSess.reduce(function(a,s){return a+Math.round(s.totalSec/60);},0)+' Min diese Woche':'Noch nicht geübt diese Woche';
@@ -1953,21 +1978,82 @@ function generateUebeplan(){
     if(diff>0)daysToLesson='Nächster Unterricht in '+diff+' Tagen.';
   }
   
-  var prompt='Du bist ein erfahrener Gitarrenlehrer und Übe-Coach. Erstelle einen konkreten Übeplan für HEUTE auf Deutsch. Der Schüler hat '+minutes+' Minuten Zeit.\n\nWICHTIGE ÜBE-REGELN:\n- Maximal 10-15 Minuten pro Abschnitt, dann wechseln\n- Abwechslung: verschiedene Stücke mischen\n- Bei langen Sessions (>45 Min): mindestens 3-4 verschiedene Stücke/Abschnitte\n- Aufwärmen am Anfang (leichteres Stück)\n- Schwieriges in die Mitte (höchste Konzentration)\n- Am Ende: Durchspielen für Auftrittssicherheit\n\n'+daysToLesson+'\n'+weekInfo+'\n\nStücke:\n'+pData+'\n\nSei direkt, motivierend und spezifisch. Nenne konkrete Tempi. Die Zeitangaben müssen in Summe '+minutes+' Minuten ergeben. Maximal 8-10 Sätze.';
+  var prompt='Du bist ein erfahrener Gitarrenlehrer und Übe-Coach. Erstelle einen Übeplan für HEUTE.\n\n'+
+    'Der Schüler hat '+minutes+' Minuten Zeit.\n'+daysToLesson+'\n'+weekInfo+'\n\nStücke:\n'+pData+'\n\n'+
+    'WICHTIGE ÜBE-REGELN:\n- Max 10-15 Min pro Abschnitt\n- Abwechslung\n- Aufwärmen am Anfang\n- Schwieriges in die Mitte\n- Am Ende: Durchspielen\n\n'+
+    'ANTWORT NUR ALS JSON-ARRAY, kein anderer Text, keine Backticks:\n'+
+    '[{"pieceId":1,"piece":"Name","sectionIdx":0,"section":"Takte 1-4","minutes":10,"bpm":60,"comment":"Kurzer Tipp"},...]'+
+    '\n\nWenn ein Stück nicht in der Liste ist (z.B. Aufwärmen), setze pieceId auf 0.'+
+    '\nDie Summe der Minuten muss '+minutes+' ergeben. Maximal 6 Einträge.';
   
   fetch('https://api.anthropic.com/v1/messages',{
     method:'POST',
     headers:{'Content-Type':'application/json','x-api-key':settings.apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-    body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:400,messages:[{role:'user',content:prompt}]})
+    body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:500,messages:[{role:'user',content:prompt}]})
   }).then(function(r){return r.json();}).then(function(data){
-    var text=(data.content&&data.content[0])?data.content[0].text:'Plan konnte nicht erstellt werden.';
-    try{localStorage.setItem('uz-uebeplan',JSON.stringify({text:text,date:new Date().toISOString()}));}catch(e){}
+    var text=(data.content&&data.content[0])?data.content[0].text:'';
+    // Try to parse as JSON
+    var plan=null;
+    try{
+      var clean=text.replace(/```json|```/g,'').trim();
+      plan=JSON.parse(clean);
+    }catch(e){
+      // Fallback: save as text
+      plan=null;
+    }
+    var cached={date:new Date().toISOString(),plan:plan,text:plan?null:text};
+    try{localStorage.setItem('uz-uebeplan',JSON.stringify(cached));}catch(e){}
     if(btn)btn.textContent='🤖 Übeplan erstellen';
     renderLesson();
+    renderHome();
   }).catch(function(e){
     if(btn)btn.textContent='🤖 Übeplan erstellen';
     if(result)result.innerHTML='<div style="font-size:12px;color:var(--muted);margin-top:8px">Fehler: '+e.message+'</div>';
   });
+}
+
+function renderUebeplanCards(){
+  var cached=null;
+  try{cached=JSON.parse(localStorage.getItem('uz-uebeplan'));}catch(e){}
+  if(!cached)return '';
+  
+  // Check if plan is from today
+  var planDate=new Date(cached.date);
+  var today=new Date();
+  if(planDate.toDateString()!==today.toDateString())return '';
+  
+  if(cached.plan&&Array.isArray(cached.plan)){
+    var totalMin=cached.plan.reduce(function(a,item){return a+(item.minutes||0);},0);
+    var html='<div class="stitle mt12">Übeplan heute <span style="font-weight:400;text-transform:none;letter-spacing:0">· '+totalMin+' Min</span></div>';
+    
+    cached.plan.forEach(function(item,idx){
+      var p=item.pieceId?pieces.find(function(x){return x.id===item.pieceId;}):null;
+      var canStart=p&&p.sections&&p.sections.length;
+      var secIdx=item.sectionIdx||0;
+      
+      html+='<div class="card" style="padding:12px;display:flex;align-items:center;gap:10px">'+
+        '<div style="flex:1">'+
+          '<div style="font-size:13px;font-weight:600">'+esc(item.piece||'')+(item.section?' · '+esc(item.section):'')+'</div>'+
+          '<div style="font-size:11px;color:var(--muted);margin-top:2px">'+
+            (item.minutes?item.minutes+' Min':'')+(item.bpm?' · '+item.bpm+' BPM':'')+
+          '</div>'+
+          (item.comment?'<div style="font-size:11px;color:var(--accent);margin-top:2px;font-style:italic">'+esc(item.comment)+'</div>':'')+
+        '</div>'+
+        (canStart?'<button class="btn btn-xs btn-go" onclick="startFromPlan('+p.id+','+secIdx+')" style="width:auto;min-width:40px">▶</button>':'')+
+      '</div>';
+    });
+    return html;
+  }
+  
+  // Fallback: text plan
+  if(cached.text){
+    return '<div class="stitle mt12">Übeplan heute</div><div class="card"><div style="font-size:13px;line-height:1.5">'+esc(cached.text).replace(/\n/g,'<br>')+'</div></div>';
+  }
+  return '';
+}
+
+function startFromPlan(pid,secIdx){
+  startPracticeFromDetail(pid,secIdx);
 }
 function renderStats(){
   var el=document.getElementById("v-stats");
@@ -2062,31 +2148,29 @@ function renderLog(){
   });
   
   var html='<div class="stitle">Tagebuch</div>';
+  var dayIdx=0;
   
   Object.keys(days).forEach(function(dayKey){
     var day=days[dayKey];
     var totalMin=day.entries.reduce(function(a,e){return a+Math.round(e.totalSec/60);},0);
+    var pieceNames=[];
+    day.entries.forEach(function(e){if(pieceNames.indexOf(e.name)<0)pieceNames.push(e.name);});
+    var summary=pieceNames.slice(0,3).join(', ')+(pieceNames.length>3?' +':'');
+    var di=dayIdx++;
     
-    html+='<div style="margin-bottom:16px">'+
-      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'+
-        '<div style="font-size:13px;font-weight:600">'+day.label+'</div>'+
-        '<div style="font-size:12px;color:var(--muted)">'+totalMin+' Min</div>'+
-      '</div>';
-    
+    // Build entries HTML
+    var entriesHtml='';
     day.entries.forEach(function(e){
       var mins=Math.round(e.totalSec/60);
-      var modeBadge=e.mode==='spielen'?'<span class="badge badge-spielen">🎭</span>':'<span class="badge badge-ueben">🔧</span>';
+      var modeBadge=e.mode==='spielen'?'<span class="badge badge-spielen">🎭</span>':e.mode==='primetime'?'<span class="badge" style="background:var(--accent-soft);color:var(--accent)">✨</span>':'<span class="badge badge-ueben">🔧</span>';
       var time=new Date(e.date).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});
       
-      // Ratings display
       var ratHtml='';
-      if(e.techRating)ratHtml+='<span style="color:var(--accent4)">Sauberkeit '+'★'.repeat(e.techRating)+'</span> ';
-      if(e.exprRating)ratHtml+='<span style="color:var(--accent4)">Ausdruck '+'★'.repeat(e.exprRating)+'</span> ';
-      if(e.flowRating)ratHtml+='<span style="color:var(--accent4)">Flow '+'★'.repeat(e.flowRating)+'</span> ';
-      if(e.errorFree===true)ratHtml+='<span style="color:var(--done)">✅ Fehlerfrei</span> ';
-      if(e.errorFree===false)ratHtml+='<span style="color:var(--muted)">Noch auf dem Weg</span> ';
+      if(e.techRating)ratHtml+='<span style="color:var(--accent4)">'+'★'.repeat(e.techRating)+'</span> ';
+      if(e.exprRating)ratHtml+='<span style="color:var(--accent4)">'+'★'.repeat(e.exprRating)+'</span> ';
+      if(e.flowRating)ratHtml+='<span style="color:var(--accent4)">'+'★'.repeat(e.flowRating)+'</span> ';
+      if(e.errorFree===true)ratHtml+='<span style="color:var(--done)">✅</span> ';
       
-      // Tempo info
       var tempoHtml='';
       if(e.rounds&&e.rounds.length){
         var maxBpm=Math.max.apply(null,e.rounds.map(function(r){return r.bpm;}));
@@ -2094,30 +2178,49 @@ function renderLog(){
         tempoHtml=minBpm===maxBpm?maxBpm+' BPM':minBpm+'–'+maxBpm+' BPM';
       }
       
-      html+='<div class="log-entry">'+
+      entriesHtml+='<div style="padding:8px 0;border-bottom:1px solid var(--border)">'+
         '<div style="display:flex;justify-content:space-between;align-items:center">'+
           '<div>'+modeBadge+' <span style="font-weight:600;font-size:13px">'+esc(e.name)+'</span>'+
             (e.section?' <span style="font-size:11px;color:var(--muted)">· '+esc(e.section)+'</span>':'')+
           '</div>'+
           '<div style="display:flex;align-items:center;gap:6px">'+
-            '<span style="font-size:13px;font-weight:600;color:var(--accent)">'+mins+' Min</span>'+
-            '<button class="rm-btn" style="width:22px;height:22px;font-size:10px" onclick="editLogTime('+e.sessionIdx+',\''+esc(e.name)+'\')">✏️</button>'+
+            '<span style="font-size:13px;font-weight:600;color:var(--accent)">'+mins+'\'</span>'+
+            '<button class="rm-btn" style="width:20px;height:20px;font-size:9px" onclick="editLogTime('+e.sessionIdx+',\''+esc(e.name).replace(/'/g,"\\'")+'\')">✏️</button>'+
           '</div>'+
         '</div>'+
-        (tempoHtml?'<div style="font-size:11px;color:var(--accent2);margin-top:4px">♩ '+tempoHtml+'</div>':'')+
-        (ratHtml?'<div style="font-size:11px;margin-top:4px">'+ratHtml+'</div>':'')+
-        (e.note?'<div style="font-size:12px;color:var(--text);margin-top:4px;padding:6px 8px;background:var(--surface2);border-radius:6px;font-style:italic">💬 '+esc(e.note)+'</div>':'')+
-        '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px">'+
-          '<span style="font-size:10px;color:var(--muted)">'+time+'</span>'+
-          '<button class="rm-btn" style="width:22px;height:22px;font-size:10px" onclick="deleteLogEntry('+e.sessionIdx+')">×</button>'+
-        '</div>'+
+        (tempoHtml||ratHtml||e.note?'<div style="margin-top:3px">'+
+          (tempoHtml?'<span style="font-size:10px;color:var(--accent2)">♩ '+tempoHtml+'</span> ':'')+
+          (ratHtml?'<span style="font-size:10px">'+ratHtml+'</span>':'')+
+        '</div>':'')+
+        (e.note?'<div style="font-size:11px;color:var(--text);margin-top:3px;padding:4px 6px;background:var(--surface2);border-radius:4px;font-style:italic">💬 '+esc(e.note)+'</div>':'')+
       '</div>';
     });
     
-    html+='</div>';
+    html+='<div class="card" style="padding:0;overflow:hidden;margin-bottom:8px">'+
+      '<div onclick="toggleLogDay('+di+')" style="padding:12px;cursor:pointer;display:flex;justify-content:space-between;align-items:center">'+
+        '<div><div style="font-size:13px;font-weight:600">'+day.label+'</div>'+
+          '<div style="font-size:11px;color:var(--muted);margin-top:1px">'+esc(summary)+'</div></div>'+
+        '<div style="text-align:right"><span style="font-size:14px;font-weight:600;color:var(--accent)">'+totalMin+'\'</span>'+
+          ' <span style="font-size:12px;color:var(--muted)" id="log-arrow-'+di+'">▼</span></div>'+
+      '</div>'+
+      '<div id="log-body-'+di+'" style="display:none;padding:0 12px 8px;border-top:1px solid var(--border)">'+entriesHtml+'</div>'+
+    '</div>';
   });
   
   el.innerHTML=html;
+}
+
+function toggleLogDay(idx){
+  var body=document.getElementById('log-body-'+idx);
+  var arrow=document.getElementById('log-arrow-'+idx);
+  if(!body)return;
+  if(body.style.display==='none'){
+    body.style.display='';
+    if(arrow)arrow.textContent='▲';
+  }else{
+    body.style.display='none';
+    if(arrow)arrow.textContent='▼';
+  }
 }
 
 function editLogTime(sessionIdx,pieceName){
