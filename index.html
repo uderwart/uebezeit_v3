@@ -2022,16 +2022,27 @@ function renderUebeplanCards(){
   var today=new Date();
   if(planDate.toDateString()!==today.toDateString())return '';
   
-  if(cached.plan&&Array.isArray(cached.plan)){
+  var html='<div class="stitle mt12">🤖 KI-Übeplan</div>';
+  
+  if(cached.plan&&Array.isArray(cached.plan)&&cached.plan.length){
     var totalMin=cached.plan.reduce(function(a,item){return a+(item.minutes||0);},0);
-    var html='<div class="stitle mt12">Übeplan heute <span style="font-weight:400;text-transform:none;letter-spacing:0">· '+totalMin+' Min</span></div>';
+    html='<div class="stitle mt12">🤖 KI-Übeplan <span style="font-weight:400;text-transform:none;letter-spacing:0">· '+totalMin+' Min</span></div>';
     
-    cached.plan.forEach(function(item,idx){
-      var p=item.pieceId?pieces.find(function(x){return x.id===item.pieceId;}):null;
+    cached.plan.forEach(function(item){
+      // Try to match piece by ID or name
+      var p=null;
+      if(item.pieceId)p=pieces.find(function(x){return x.id===item.pieceId;});
+      if(!p&&item.piece)p=pieces.find(function(x){return x.name===item.piece;});
       var canStart=p&&p.sections&&p.sections.length;
       var secIdx=item.sectionIdx||0;
+      // Also try to match section by name
+      if(p&&item.section){
+        var matchIdx=-1;
+        (p.sections||[]).forEach(function(s,si){if(s.name===item.section)matchIdx=si;});
+        if(matchIdx>=0)secIdx=matchIdx;
+      }
       
-      html+='<div class="card" style="padding:12px;display:flex;align-items:center;gap:10px">'+
+      html+='<div class="card" style="padding:12px;display:flex;align-items:center;gap:10px;border-left:3px solid var(--accent2)">'+
         '<div style="flex:1">'+
           '<div style="font-size:13px;font-weight:600">'+esc(item.piece||'')+(item.section?' · '+esc(item.section):'')+'</div>'+
           '<div style="font-size:11px;color:var(--muted);margin-top:2px">'+
@@ -2047,7 +2058,7 @@ function renderUebeplanCards(){
   
   // Fallback: text plan
   if(cached.text){
-    return '<div class="stitle mt12">Übeplan heute</div><div class="card"><div style="font-size:13px;line-height:1.5">'+esc(cached.text).replace(/\n/g,'<br>')+'</div></div>';
+    return html+'<div class="card" style="border-left:3px solid var(--accent2)"><div style="font-size:13px;line-height:1.5">'+esc(cached.text).replace(/\n/g,'<br>')+'</div></div>';
   }
   return '';
 }
