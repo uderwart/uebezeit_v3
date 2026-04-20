@@ -1658,15 +1658,15 @@ function renderLesson(){
     var countText=diffDays<=0?'Heute!':diffDays===1?'Morgen':'In '+diffDays+' Tagen';
     var countStyle=diffDays<=0?'color:var(--accent);font-weight:700':'';
     var timeStr=next.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});
-    dateHtml='<div class="card" onclick="document.getElementById(\'lesson-date-edit\').style.display=\'block\'" style="cursor:pointer">'+
-      '<div style="display:flex;justify-content:space-between;align-items:center">'+
+    dateHtml='<div class="card">'+
+      '<div onclick="var e=document.getElementById(\'lesson-date-edit\');e.style.display=e.style.display===\'none\'?\'block\':\'none\'" style="display:flex;justify-content:space-between;align-items:center;cursor:pointer">'+
         '<div><div class="stitle" style="margin:0">Nächster Unterricht</div>'+
           '<div style="font-size:14px;font-weight:600;margin-top:2px">'+next.toLocaleDateString('de-DE',{weekday:'long',day:'numeric',month:'long'})+' · '+timeStr+'</div></div>'+
         '<div style="font-family:\'DM Serif Display\',serif;font-size:22px;'+countStyle+'">'+countText+'</div>'+
       '</div>'+
-      '<div id="lesson-date-edit" style="display:none;margin-top:8px" onclick="event.stopPropagation()">'+
+      '<div id="lesson-date-edit" style="display:none;margin-top:8px">'+
         '<div style="display:flex;gap:8px"><input type="date" value="'+(lesson.nextDate||'').substring(0,10)+'" onchange="updateLessonDate(this.value)" style="flex:1;font-size:14px;padding:8px">'+
-        '<input type="time" value="'+(lesson.nextDate||'').substring(11,16)||'12:00'+'" onchange="updateLessonTime(this.value)" style="width:100px;font-size:14px;padding:8px"></div>'+
+        '<input type="time" value="'+((lesson.nextDate||'').substring(11,16)||'12:00')+'" onchange="updateLessonTime(this.value)" style="width:90px;font-size:14px;padding:8px"></div>'+
       '</div>'+
     '</div>';
   }else{
@@ -1713,7 +1713,7 @@ function renderLesson(){
   }
   
   // Übeplan – safe rendering with auto-cleanup
-  var planHtml='<div class="card"><div class="stitle">Übeplan</div>';
+  var planHtml='<div class="card" style="overflow:hidden"><div class="stitle">Übeplan</div>';
   var cached=null;
   try{
     var raw=localStorage.getItem('uz-uebeplan');
@@ -1729,10 +1729,10 @@ function renderLesson(){
       if(cached.plan&&Array.isArray(cached.plan)&&cached.plan.length){
         cached.plan.forEach(function(item){
           if(!item||typeof item!=='object')return;
-          planHtml+='<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px">'+
-            '<div><span style="font-weight:600">'+esc(String(item.piece||''))+'</span>'+(item.section?' · '+esc(String(item.section)):'')+
-            (item.comment?' <span style="color:var(--muted);font-style:italic">'+esc(String(item.comment))+'</span>':'')+'</div>'+
-            '<div style="text-align:right;white-space:nowrap">'+(item.minutes?item.minutes+'\'':'')+' '+(item.bpm?item.bpm+' BPM':'')+'</div></div>';
+          planHtml+='<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;gap:8px">'+
+            '<div style="flex:1;min-width:0"><div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(String(item.piece||''))+(item.section?' · '+esc(String(item.section)):'')+'</div>'+
+            (item.comment?'<div style="color:var(--muted);font-style:italic;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(String(item.comment))+'</div>':'')+'</div>'+
+            '<div style="text-align:right;white-space:nowrap;font-size:11px">'+(item.minutes?item.minutes+'\'':'')+' '+(item.bpm?item.bpm+' BPM':'')+'</div></div>';
         });
         planHtml+='<div style="font-size:10px;color:var(--muted);margin:8px 0">Erstellt '+timeStr+'</div>';
       }else if(cached.text&&typeof cached.text==='string'){
