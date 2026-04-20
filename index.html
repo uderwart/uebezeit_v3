@@ -1733,6 +1733,7 @@ function renderLesson(){
   planHtml+='<div style="display:flex;gap:8px;align-items:center">'+
     '<input type="number" id="plan-minutes" value="'+(settings.sessionMin||45)+'" placeholder="Min" style="width:70px;font-size:14px;padding:8px;text-align:center">'+
     '<button class="btn btn-go btn-sm" onclick="generateUebeplan()" id="plan-btn" style="flex:1">🤖 Übeplan erstellen</button>'+
+    (cached?'<button class="btn btn-xs btn-soft" onclick="clearUebeplan()" style="width:auto;min-width:32px">×</button>':'')+
   '</div><div id="plan-result"></div></div>';
   
   // Questions
@@ -2061,6 +2062,12 @@ function renderUebeplanCards(){
 
 function startFromPlan(pid,secIdx){
   startPracticeFromDetail(pid,secIdx);
+}
+
+function clearUebeplan(){
+  try{localStorage.removeItem('uz-uebeplan');}catch(e){}
+  renderLesson();
+  renderHome();
 }
 function renderStats(){
   var el=document.getElementById("v-stats");
