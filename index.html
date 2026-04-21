@@ -1434,7 +1434,9 @@ function showRatingScreen(){
   var timeInfo=fmt(pe.totalSec);
   var bpmInfo=pe.rounds&&pe.rounds.length?' · max '+Math.max.apply(null,pe.rounds.map(function(r){return r.bpm;}))+' BPM':'';
   
-  el.innerHTML='<div style="text-align:center;padding:16px 0">'+
+  el.innerHTML=
+  '<button class="btn btn-xs btn-soft mb8" onclick="cancelRating()" style="width:auto">← Zurück</button>'+
+  '<div style="text-align:center;padding:16px 0">'+
     '<div style="font-family:\'DM Serif Display\',serif;font-size:20px">'+esc(pe.pieceName)+'</div>'+
     '<div style="font-size:12px;color:var(--muted)">'+timeInfo+bpmInfo+(pe.section?' · '+esc(pe.section):'')+'</div>'+
     '<div style="font-size:14px;color:var(--muted);margin-top:8px;font-style:italic">Wie war es?</div>'+
@@ -1486,6 +1488,14 @@ function saveEntry(skip){
     save();
     localStorage.removeItem("uz-pending");
   }
+  var lastPiece=pName?pieces.find(function(x){return x.name===pName;}):null;
+  if(lastPiece)showDetail(lastPiece.id);else nav('home');
+}
+
+function cancelRating(){
+  // Go back without saving - discard the entry
+  var pName=pendingEntry?pendingEntry.pieceName:null;
+  pendingEntry=null;
   var lastPiece=pName?pieces.find(function(x){return x.name===pName;}):null;
   if(lastPiece)showDetail(lastPiece.id);else nav('home');
 }
@@ -1625,6 +1635,7 @@ function stopPrimeTime(abort){
     var el=document.getElementById("v-practice");
     var mins=Math.round(practiceElapsed/60);
     el.innerHTML=
+      '<button class="btn btn-xs btn-soft mb8" onclick="practicing=false;practiceStart=null;nav(\'home\')" style="width:auto">← Zurück</button>'+
       '<div style="text-align:center;padding:16px 0">'+
         '<div style="font-size:32px;margin-bottom:4px">✨</div>'+
         '<div style="font-family:\'DM Serif Display\',serif;font-size:20px">Prime Time</div>'+
@@ -1900,7 +1911,8 @@ function confirmFinishLesson(){
   
   // Show piece status selection screen
   var el=document.getElementById("v-lesson");
-  var html='<div class="stitle">Unterricht abschließen</div>'+
+  var html='<button class="btn btn-xs btn-soft mb12" onclick="renderLesson()" style="width:auto">← Zurück</button>'+
+    '<div class="stitle">Unterricht abschließen</div>'+
     '<div style="font-size:13px;color:var(--muted);margin-bottom:12px">Was passiert mit den Hausaufgaben?</div>';
   
   hwPieces.forEach(function(p){
@@ -1914,8 +1926,7 @@ function confirmFinishLesson(){
     '</div>';
   });
   
-  html+='<button class="btn btn-go mt12" onclick="finishLesson()">Abschließen</button>'+
-    '<button class="btn btn-soft mt8" onclick="renderLesson()">Abbrechen</button>';
+  html+='<button class="btn btn-go mt12" onclick="finishLesson()">Abschließen</button>';
   
   el.innerHTML=html;
 }
