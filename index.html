@@ -42,13 +42,14 @@
 
 /* === RESET === */
 * { box-sizing: border-box; margin: 0; padding: 0; }
-html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; overflow-x: hidden; }
 body {
   background: var(--bg);
   color: var(--text);
   font-family: 'DM Sans', sans-serif;
   -webkit-tap-highlight-color: transparent;
-  overscroll-behavior-y: contain;
+  overscroll-behavior: contain;
+  overflow-x: hidden;
   padding-bottom: calc(var(--nav-h) + var(--safe-b) + 12px);
   min-height: 100dvh;
 }
@@ -530,11 +531,20 @@ function countPerformanceReady(){
 var practicing=false;
 
 // === NAV ===
+var practiceReturnView=null; // remember which view to return to practice from
+
 function nav(v){
-  // Guard: wenn gerade geübt wird, erst bestätigen
+  // If practicing and navigating away: pause, don't abort
   if(practicing&&v!=='practice'&&v!=='detail'){
-    if(!confirm("Übung abbrechen?"))return;
-    stopPractice(true);
+    if(!practicePaused&&practiceStart){
+      practicePaused=true;
+      pauseStart=Date.now();
+    }
+    practiceReturnView=v;
+  }
+  // If navigating back to practice view
+  if(v==='practice'&&practicing){
+    practiceReturnView=null;
   }
   document.querySelectorAll(".view").forEach(function(x){x.classList.remove("on");});
   var el=document.getElementById("v-"+v);
@@ -559,6 +569,17 @@ function showDetail(id){
 }
 
 // === HOME ===
+function practiceBanner(){
+  if(!practicing||!practiceStart)return '';
+  var p=pieces.find(function(x){return x.id===practicePieceId;});
+  var name=p?esc(p.name):'';
+  return '<div onclick="nav(\'practice\')" style="cursor:pointer;padding:10px 14px;background:var(--accent2);color:#fff;border-radius:10px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center">'+
+    '<div><div style="font-size:12px;font-weight:600">⏸ Üben pausiert</div>'+
+    '<div style="font-size:11px;opacity:.85">'+name+' · '+fmt(practiceElapsed)+'</div></div>'+
+    '<div style="font-size:14px;font-weight:700">▶ Weiter</div>'+
+  '</div>';
+}
+
 function renderHome(){
   var el=document.getElementById("v-home");
   var hour=new Date().getHours();
@@ -617,6 +638,7 @@ function renderHome(){
   }
   
   el.innerHTML=
+    practiceBanner()+
     '<div style="text-align:center;padding:16px 0 8px">'+
       '<div style="font-family:\'DM Serif Display\',serif;font-size:20px;color:var(--text)">'+greeting+'</div>'+
       '<div style="font-size:12px;color:var(--muted);margin-top:4px">'+new Date().toLocaleDateString('de-DE',{weekday:'long',day:'numeric',month:'long'})+'</div>'+
@@ -1825,7 +1847,7 @@ function renderLesson(){
     });
   }
   
-  el.innerHTML='<div class="stitle">Unterricht</div>'+dateHtml+hwHtml+planHtml+qHtml+fbHtml+sinceHtml+actionsHtml+archiveHtml;
+  el.innerHTML=practiceBanner()+'<div class="stitle">Unterricht</div>'+dateHtml+hwHtml+planHtml+qHtml+fbHtml+sinceHtml+actionsHtml+archiveHtml;
 }
 
 function updateLessonDate(dateStr){
@@ -1995,7 +2017,15 @@ function generateUebeplan(){
   }
   
   var prompt='Erstelle einen Gitarren-Übeplan. '+minutes+' Minuten Zeit. '+daysToLesson+' '+weekInfo+'\n\nStücke:\n'+pData+'\n\n'+
-    'Regeln: Max 10-15 Min pro Abschnitt, Abwechslung, Aufwärmen am Anfang, Schwieriges in der Mitte, Durchspielen am Ende.\n\n'+
+    'PRIORITÄTEN:\n'+
+    '- Stücke mit Status "hausaufgabe" haben VORRANG: ca. 60-70% der Zeit\n'+
+    '- Wenn keine Hausaufgaben vorhanden: Stücke priorisieren die am weitesten vom Zieltempo entfernt sind oder am längsten nicht geübt wurden\n'+
+    '- Stücke mit Status "aktiv" bekommen den Rest, damit sie nicht einrosten\n'+
+    '- Stücke weit vom Zieltempo brauchen mehr Zeit als solche die fast fertig sind\n'+
+    '- Beginne mit etwas Leichtem zum Aufwärmen (5 Min)\n'+
+    '- Schwieriges (weit vom Ziel) in die Mitte bei höchster Konzentration\n'+
+    '- Am Ende ein Stück im Spielen-Modus durchspielen für Auftrittssicherheit\n'+
+    '- Max 10-15 Min pro Abschnitt, dann wechseln\n\n'+
     'WICHTIG: Antworte AUSSCHLIESSLICH mit einem JSON-Array. Kein Text davor oder danach. Keine Markdown-Backticks. Nur das reine JSON-Array.\n\n'+
     'Format: [{"pieceId":1,"piece":"Stückname","sectionIdx":0,"section":"Takte 1-4","minutes":10,"bpm":60,"comment":"Kurzer Tipp auf Deutsch"}]\n\n'+
     'pieceId: Verwende die ID aus der Stücke-Liste oben. Wenn nicht vorhanden (z.B. Aufwärmen), setze pieceId auf 0.\n'+
@@ -2091,7 +2121,7 @@ function renderStats(){
     return;
   }
   
-  el.innerHTML='<div class="stitle">Fortschritt</div>'+buildSollIst()+buildWeekOverview();
+  el.innerHTML=practiceBanner()+'<div class="stitle">Fortschritt</div>'+buildSollIst()+buildWeekOverview();
 }
 
 function buildSollIst(){
