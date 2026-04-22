@@ -48,10 +48,10 @@ body {
   color: var(--text);
   font-family: 'DM Sans', sans-serif;
   -webkit-tap-highlight-color: transparent;
-  overscroll-behavior: contain;
   overflow-x: hidden;
   padding-bottom: calc(var(--nav-h) + var(--safe-b) + 12px);
   min-height: 100dvh;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* === APP CONTAINER === */
@@ -414,13 +414,13 @@ if(typeof structuredClone==='undefined'){window.structuredClone=function(o){retu
 
 // === FOKUS-KATEGORIEN (vordefiniert) ===
 var FOCUS_OPTIONS=[
-  {key:'sauberkeit',label:'Sauberkeit',type:'stars'},
-  {key:'langsam',label:'Langsam genug',type:'stars'},
-  {key:'ausdruck',label:'Ausdruck',type:'stars'},
-  {key:'flow',label:'Im Fluss',type:'stars'},
-  {key:'kraft',label:'Kraft / Ausdauer',type:'stars'},
-  {key:'gleichmaessig',label:'Gleichmäßigkeit',type:'stars'},
-  {key:'fehlerfrei',label:'Fehlerfrei',type:'yesno'}
+  {key:'sauberkeit',label:'Sauberkeit',type:'stars',mode:'ueben'},
+  {key:'langsam',label:'Langsam genug',type:'stars',mode:'ueben'},
+  {key:'ausdruck',label:'Ausdruck',type:'stars',mode:'spielen'},
+  {key:'flow',label:'Im Fluss',type:'stars',mode:'spielen'},
+  {key:'kraft',label:'Kraft / Ausdauer',type:'stars',mode:'ueben'},
+  {key:'gleichmaessig',label:'Gleichmäßigkeit',type:'stars',mode:'ueben'},
+  {key:'fehlerfrei',label:'Fehlerfrei',type:'yesno',mode:'spielen'}
 ];
 
 // === DEFAULT STÜCKE ===
@@ -1003,22 +1003,30 @@ function editPiece(id){
       '<button class="btn btn-xs '+(s.mode==='spielen'?'btn-primary':'btn-soft')+'" onclick="setSectionMode('+p.id+','+si+',\'spielen\')">🎭 Spielen</button>'+
     '</div>';
     
-    // Focus checkboxes
+    // Focus checkboxes - filtered by mode
+    var sectionMode=s.mode||'ueben';
     var focusHtml='<div style="margin-top:6px"><div style="font-size:10px;color:var(--muted);margin-bottom:4px">Fokus</div><div style="display:flex;gap:4px;flex-wrap:wrap">';
-    FOCUS_OPTIONS.forEach(function(fo){
+    FOCUS_OPTIONS.filter(function(fo){return fo.mode===sectionMode;}).forEach(function(fo){
       var active=(s.focus||[]).indexOf(fo.key)>=0;
       focusHtml+='<button class="btn btn-xs '+(active?'btn-go':'btn-soft')+'" onclick="toggleSectionFocus('+p.id+','+si+',\''+fo.key+'\')">'+fo.label+'</button>';
     });
-    // Custom focus entries (not in FOCUS_OPTIONS)
+    // Custom focus entries - only show those matching current mode
     var predefinedKeys=FOCUS_OPTIONS.map(function(fo){return fo.key;});
-    (s.focus||[]).forEach(function(f){
-      if(predefinedKeys.indexOf(f)<0){
-        focusHtml+='<button class="btn btn-xs btn-go" onclick="toggleSectionFocus('+p.id+','+si+',\''+esc(f).replace(/'/g,"\\'")+'\')">'+esc(f)+' ×</button>';
-      }
+    var sMode=s.mode||'ueben';
+    var customEntries=(s.customFocus||[]).map(function(cf){return typeof cf==='object'?cf:{key:cf,mode:sMode};});
+    var modeCustom=customEntries.filter(function(cf){return cf.mode===sMode;});
+    
+    modeCustom.forEach(function(cf){
+      var active=(s.focus||[]).indexOf(cf.key)>=0;
+      focusHtml+='<span style="display:inline-flex;align-items:center;gap:0;margin:2px">'+
+        '<button class="btn btn-xs '+(active?'btn-go':'btn-soft')+'" style="border-top-right-radius:0;border-bottom-right-radius:0" onclick="toggleSectionFocus('+p.id+','+si+',\''+esc(cf.key).replace(/'/g,"\\'")+'\')">'+esc(cf.key)+'</button>'+
+        '<button class="btn btn-xs btn-soft" style="border-top-left-radius:0;border-bottom-left-radius:0;min-width:24px;padding:6px 6px" onclick="removeCustomFocus('+p.id+','+si+',\''+esc(cf.key).replace(/'/g,"\\'")+'\')">×</button>'+
+      '</span>';
     });
     focusHtml+='</div><div style="display:flex;gap:4px;margin-top:4px"><input type="text" id="custom-focus-'+p.id+'-'+si+'" placeholder="Eigener Fokus..." style="flex:1;font-size:12px;padding:6px"><button class="btn btn-xs btn-soft" onclick="addCustomFocus('+p.id+','+si+')">+</button></div></div>';
     
-    secsHtml+='<div class="card" style="padding:12px;margin-bottom:8px">'+
+    secsHtml+='<div class="card" style="padding:12px;margin-bottom:10px;border-left:3px solid var(--accent2)">'+
+      '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Abschnitt '+(si+1)+'</div>'+
       '<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><input type="text" value="'+esc(s.name)+'" data-piece="'+p.id+'" data-sec="'+si+'" data-field="name" style="flex:1;font-size:14px;padding:8px"><button class="rm-btn" onclick="delSection('+p.id+','+si+')">×</button></div>'+
       '<div style="display:flex;gap:8px"><div style="flex:1"><div style="font-size:10px;color:var(--muted)">Start</div><input type="number" value="'+(s.startBpm||'')+'" data-piece="'+p.id+'" data-sec="'+si+'" data-field="startBpm" placeholder="BPM" style="font-size:14px;padding:8px"></div>'+
       '<div style="flex:1"><div style="font-size:10px;color:var(--muted)">Ziel</div><input type="number" value="'+(s.targetBpm||'')+'" data-piece="'+p.id+'" data-sec="'+si+'" data-field="targetBpm" placeholder="BPM" style="font-size:14px;padding:8px"></div>'+
@@ -1085,7 +1093,26 @@ function savePieceFields(id){
 function setSectionMode(pid,si,mode){
   savePieceFields(pid);
   var p=pieces.find(function(x){return x.id===pid;});
-  if(p&&p.sections[si]){p.sections[si].mode=mode;save();editPiece(pid);}
+  if(p&&p.sections[si]){
+    var oldMode=p.sections[si].mode;
+    if(oldMode!==mode){
+      // Save current focus state for old mode
+      if(!p.sections[si].focusPerMode)p.sections[si].focusPerMode={};
+      p.sections[si].focusPerMode[oldMode]=[].concat(p.sections[si].focus||[]);
+      
+      // Restore saved focus for new mode, or use defaults
+      if(p.sections[si].focusPerMode[mode]){
+        p.sections[si].focus=[].concat(p.sections[si].focusPerMode[mode]);
+      }else{
+        var defaults=FOCUS_OPTIONS.filter(function(fo){return fo.mode===mode;}).map(function(fo){return fo.key;});
+        var customEntries=(p.sections[si].customFocus||[]).map(function(cf){return typeof cf==='object'?cf:{key:cf,mode:mode};});
+        var modeCustomKeys=customEntries.filter(function(cf){return cf.mode===mode;}).map(function(cf){return cf.key;});
+        p.sections[si].focus=defaults.concat(modeCustomKeys);
+      }
+    }
+    p.sections[si].mode=mode;
+    save();editPiece(pid);
+  }
 }
 
 function toggleSectionFocus(pid,si,key){
@@ -1095,7 +1122,11 @@ function toggleSectionFocus(pid,si,key){
   var f=p.sections[si].focus||[];
   var idx=f.indexOf(key);
   if(idx>=0)f.splice(idx,1);else f.push(key);
-  if(!f.length)f.push('sauberkeit');// min 1
+  // Ensure at least one focus
+  if(!f.length){
+    var mode=p.sections[si].mode||'ueben';
+    f.push(mode==='spielen'?'ausdruck':'sauberkeit');
+  }
   p.sections[si].focus=f;
   save();editPiece(pid);
 }
@@ -1107,10 +1138,25 @@ function addCustomFocus(pid,si){
   var p=pieces.find(function(x){return x.id===pid;});
   if(!p||!p.sections[si])return;
   var key=input.value.trim();
-  if(p.sections[si].focus.indexOf(key)<0){
-    p.sections[si].focus.push(key);
-    save();
-  }
+  var mode=p.sections[si].mode||'ueben';
+  if(!p.sections[si].customFocus)p.sections[si].customFocus=[];
+  var exists=p.sections[si].customFocus.some(function(cf){var k=typeof cf==='object'?cf.key:cf;return k===key;});
+  if(!exists)p.sections[si].customFocus.push({key:key,mode:mode});
+  if(p.sections[si].focus.indexOf(key)<0)p.sections[si].focus.push(key);
+  save();
+  editPiece(pid);
+}
+
+function removeCustomFocus(pid,si,key){
+  savePieceFields(pid);
+  var p=pieces.find(function(x){return x.id===pid;});
+  if(!p||!p.sections[si])return;
+  var f=p.sections[si].focus||[];
+  var idx=f.indexOf(key);
+  if(idx>=0)f.splice(idx,1);
+  var cf=p.sections[si].customFocus||[];
+  p.sections[si].customFocus=cf.filter(function(c){var k=typeof c==='object'?c.key:c;return k!==key;});
+  save();
   editPiece(pid);
 }
 
@@ -1124,7 +1170,7 @@ function addSection(pid){
 
 function delSection(pid,si){
   var p=pieces.find(function(x){return x.id===pid;});
-  if(!p||p.sections.length<=1){alert('Mindestens ein Abschnitt nötig.');return;}
+  if(!p||p.sections.length<=1)return;
   savePieceFields(pid);
   p.sections.splice(si,1);
   save();editPiece(pid);
@@ -2398,6 +2444,7 @@ function renderSettings(){
       '<button class="btn btn-soft mb8" onclick="exportData()">📥 Daten exportieren (JSON)</button>'+
       '<button class="btn btn-soft mb8" onclick="document.getElementById(\'import-file\').click()">📤 Daten importieren</button>'+
       '<input type="file" id="import-file" accept=".json" style="display:none" onchange="importData(event)">'+
+      '<div id="import-result"></div>'+
       '<button class="btn btn-stop mt8" onclick="resetAll()">Komplett-Reset</button>'+
     '</div>'+
     '<button class="btn btn-soft mt12" onclick="nav(\'home\')">← Zurück</button>'+
@@ -2515,12 +2562,15 @@ function importData(event){
       
       save();
       
-      var msg='Import erfolgreich!\n'+pieces.length+' Stücke, '+sessions.length+' Einträge.';
-      if(isV2)msg+='\n\nv2-Daten erkannt und migriert:\n- Status "aktiv" für alle Stücke\n- Modus "üben" für alle Abschnitte\n- Fokus "Sauberkeit" als Standard';
-      alert(msg);
+      var msg='Import erfolgreich! '+pieces.length+' Stücke, '+sessions.length+' Einträge.';
+      if(isV2)msg+=' (v2-Daten migriert)';
       renderSettings();
+      // Show success message inline
+      var resultEl=document.getElementById('import-result');
+      if(resultEl)resultEl.innerHTML='<div style="font-size:12px;color:var(--done);margin-top:8px">✅ '+msg+'</div>';
     }catch(err){
-      alert('Import fehlgeschlagen: '+err.message);
+      var resultEl=document.getElementById('import-result');
+      if(resultEl)resultEl.innerHTML='<div style="font-size:12px;color:red;margin-top:8px">Import fehlgeschlagen: '+err.message+'</div>';
     }
   };
   reader.readAsText(file);
@@ -2531,8 +2581,10 @@ var resetStep=0;
 function resetAll(){
   if(resetStep===0){
     resetStep=1;
-    alert('Achtung: Alle Daten werden gelöscht! Drücke nochmal zum Bestätigen.');
-    setTimeout(function(){resetStep=0;},5000);
+    var btn=event.target;
+    btn.textContent='⚠️ Wirklich ALLES löschen?';
+    btn.style.background='#c0392b';btn.style.color='#fff';
+    setTimeout(function(){resetStep=0;btn.textContent='Komplett-Reset';btn.style.background='';btn.style.color='';},4000);
     return;
   }
   try{localStorage.clear();}catch(e){}
