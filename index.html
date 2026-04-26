@@ -765,12 +765,8 @@ function renderDetail(id){
   var linksHtml=renderPieceLinks(p);
   
   // Tempo charts per section
-  var chartsHtml='';
-  secs.forEach(function(s){
-    var hist=getSecHist(p.name,s.name);
-    if(hist.length<2)return;
-    chartsHtml+=buildTempoChart(p.name,s.name,s.targetBpm,hist);
-  });
+  // Combined tempo chart for all sections
+  var chartsHtml=buildCombinedTempoChart(p);
   if(chartsHtml)chartsHtml='<div class="stitle mt12">Tempo-Verlauf</div>'+chartsHtml;
   
   // Rating history for this piece
@@ -779,10 +775,22 @@ function renderDetail(id){
   // Recent entries for this piece
   var recentHtml=buildRecentEntries(p.name);
   
-  // AI analysis
+  // AI analysis - accordion with date
   var analysisHtml='<div style="margin-top:12px"><button class="btn btn-soft" onclick="analyzePiece('+p.id+')" id="ai-btn-'+p.id+'">🤖 Analyse & Empfehlung</button><div id="ai-result-'+p.id+'"></div></div>';
   var cached=analysisCache[p.name];
-  if(cached)analysisHtml='<div style="margin-top:12px"><div class="card" style="border-left:3px solid var(--accent2)"><div class="stitle" style="margin:0 0 4px">🤖 Analyse</div><div style="font-size:13px;line-height:1.5">'+esc(cached.text).replace(/\n/g,'<br>')+'</div><div style="font-size:10px;color:var(--muted);margin-top:6px">'+new Date(cached.date).toLocaleDateString('de-DE')+'</div></div><button class="btn btn-xs btn-soft mt8" onclick="analyzePiece('+p.id+')" id="ai-btn-'+p.id+'">Neue Analyse</button><div id="ai-result-'+p.id+'"></div></div>';
+  if(cached){
+    var aDate=new Date(cached.date);
+    var aDateStr=aDate.toLocaleDateString('de-DE',{day:'numeric',month:'short',year:'numeric'});
+    analysisHtml='<div style="margin-top:12px">'+
+      '<div class="card" style="padding:0;overflow:hidden;border-left:3px solid var(--accent2)">'+
+        '<div onclick="var b=document.getElementById(\'ai-body-'+p.id+'\');var a=document.getElementById(\'ai-arrow-'+p.id+'\');if(b.style.display===\'none\'){b.style.display=\'\';a.textContent=\'▲\';}else{b.style.display=\'none\';a.textContent=\'▼\';}" style="padding:12px;cursor:pointer;display:flex;justify-content:space-between;align-items:center">'+
+          '<div><div class="stitle" style="margin:0">🤖 Analyse</div><div style="font-size:10px;color:var(--muted);margin-top:2px">'+aDateStr+'</div></div>'+
+          '<span style="font-size:12px;color:var(--muted)" id="ai-arrow-'+p.id+'">▼</span>'+
+        '</div>'+
+        '<div id="ai-body-'+p.id+'" style="display:none;padding:0 12px 12px;border-top:1px solid var(--border)"><div style="font-size:13px;line-height:1.5;margin-top:8px">'+esc(cached.text).replace(/\n/g,'<br>')+'</div></div>'+
+      '</div>'+
+      '<button class="btn btn-xs btn-soft mt8" onclick="analyzePiece('+p.id+')" id="ai-btn-'+p.id+'">Neue Analyse</button><div id="ai-result-'+p.id+'"></div></div>';
+  }
   
   el.innerHTML=
     '<button class="btn btn-xs btn-soft mb12" onclick="nav(\'home\')" style="width:auto">← Zurück</button>'+
@@ -801,7 +809,92 @@ function renderDetail(id){
     '<button class="btn btn-soft mt12" onclick="editPiece('+p.id+')">✏️ Bearbeiten</button>';
 }
 
-// === TEMPO CHART (SVG) ===
+// === COMBINED TEMPO CHART ===
+function buildCombinedTempoChart(p){
+  var secs=(p.sections||[]).filter(function(s){return s.targetBpm;});
+  var lineColors=['#2a9d8f','#c76a4a','#a4546e','#b07d3a','#6b8193','#7c9070'];
+  var hasData=false;
+  var allData=[];
+  
+  secs.forEach(function(s,si){
+    var hist=getSecHist(p.name,s.name);
+    if(hist.length>=2){hasData=true;}
+    allData.push({name:s.name,target:s.targetBpm,hist:hist.slice(-20),color:lineColors[si%lineColors.length]});
+  });
+  if(!hasData)return '';
+  
+  // Find global min/max across all sections
+  var globalMin=999,globalMax=0;
+  allData.forEach(function(d){
+    if(d.target>globalMax)globalMax=d.target;
+    d.hist.forEach(function(h){
+      if(h.bpm<globalMin)globalMin=h.bpm;
+      if(h.bpm>globalMax)globalMax=h.bpm;
+    });
+  });
+  var range=Math.max(globalMax-globalMin,10);
+  globalMin=Math.max(0,globalMin-5);
+  globalMax+=5;
+  range=globalMax-globalMin;
+  
+  var w=320,h=140,pad=25;
+  var svg='<svg viewBox="0 0 '+w+' '+h+'" style="width:100%;height:auto;display:block">';
+  
+  // Draw target lines (dashed)
+  var drawnTargets={};
+  allData.forEach(function(d){
+    if(!d.target||drawnTargets[d.target])return;
+    drawnTargets[d.target]=true;
+    var ty=pad+(1-(d.target-globalMin)/range)*(h-pad*2);
+    svg+='<line x1="'+pad+'" y1="'+ty+'" x2="'+(w-pad)+'" y2="'+ty+'" stroke="var(--muted)" stroke-width="0.5" stroke-dasharray="3,3" opacity="0.4"/>';
+    svg+='<text x="'+(w-pad+2)+'" y="'+(ty+3)+'" font-size="8" fill="var(--muted)" font-family="DM Sans">'+d.target+'</text>';
+  });
+  
+  // Draw lines for each section
+  allData.forEach(function(d){
+    if(d.hist.length<2)return;
+    var stepX=(w-pad*2)/(d.hist.length-1);
+    
+    // Line
+    var pts=d.hist.map(function(h,i){
+      var x=pad+i*stepX;
+      var y=pad+(1-(h.bpm-globalMin)/range)*(h-pad*2);
+      return x+','+y;
+    });
+    // Fix: recalculate y properly
+    pts=d.hist.map(function(pt,i){
+      var x=pad+i*stepX;
+      var y=pad+(1-(pt.bpm-globalMin)/range)*(h-pad*2);
+      return x+','+y;
+    });
+    svg+='<polyline points="'+pts.join(' ')+'" fill="none" stroke="'+d.color+'" stroke-width="2" stroke-linejoin="round" opacity="0.85"/>';
+    
+    // Last value dot + label
+    var lastPt=d.hist[d.hist.length-1];
+    var lastX=pad+(d.hist.length-1)*stepX;
+    var lastY=pad+(1-(lastPt.bpm-globalMin)/range)*(h-pad*2);
+    svg+='<circle cx="'+lastX+'" cy="'+lastY+'" r="3" fill="'+d.color+'"/>';
+    svg+='<text x="'+lastX+'" y="'+(lastY-6)+'" font-size="9" fill="'+d.color+'" text-anchor="middle" font-weight="600" font-family="DM Sans">'+lastPt.bpm+'</text>';
+  });
+  
+  // Date labels from longest series
+  var longest=allData.reduce(function(a,d){return d.hist.length>a.hist.length?d:a;},{hist:[]});
+  if(longest.hist.length>=2){
+    svg+='<text x="'+pad+'" y="'+(h-2)+'" font-size="8" fill="var(--muted)" font-family="DM Sans">'+new Date(longest.hist[0].date).toLocaleDateString('de-DE',{day:'numeric',month:'short'})+'</text>';
+    svg+='<text x="'+(w-pad)+'" y="'+(h-2)+'" font-size="8" fill="var(--muted)" text-anchor="end" font-family="DM Sans">'+new Date(longest.hist[longest.hist.length-1].date).toLocaleDateString('de-DE',{day:'numeric',month:'short'})+'</text>';
+  }
+  
+  svg+='</svg>';
+  
+  // Legend
+  var legend=allData.filter(function(d){return d.hist.length>=2;}).map(function(d){
+    return '<span style="font-size:10px;color:'+d.color+'">● '+esc(d.name)+'</span>';
+  }).join(' ');
+  
+  return '<div class="card" style="padding:10px">'+svg+'<div style="display:flex;gap:8px;justify-content:center;margin-top:4px;flex-wrap:wrap">'+legend+'</div></div>';
+}
+
+// === SINGLE TEMPO CHART (kept for compatibility) ===
 function buildTempoChart(pName,sName,targetBpm,hist){
   if(!hist||hist.length<2)return '';
   var w=320,h=100,pad=20;
@@ -1312,7 +1405,7 @@ function renderPractice(){
       '</div>'+
       '<div style="font-family:\'DM Serif Display\',serif;font-size:20px">'+esc(p.name)+'</div>'+
       '<div style="font-size:12px;color:var(--muted)">'+esc(p.cat)+(sec?' · '+esc(sec.name):'')+'</div>'+
-      (focusInfo?'<div onclick="togglePracticeFocus()" style="font-size:10px;color:var(--accent2);margin-top:4px;cursor:pointer">'+esc(focusInfo)+' ✎</div>':'')+
+      (focusInfo?'<button onclick="togglePracticeFocus()" style="font-size:11px;color:var(--accent2);margin-top:4px;cursor:pointer;border:1px solid var(--border);background:var(--surface);border-radius:8px;padding:6px 14px;min-height:36px;font-family:inherit">'+esc(focusInfo)+' ✎</button>':'')+
     '</div>'+
     '<div id="practice-focus-edit" style="display:none;margin:8px 0"></div>'+
     '<div style="text-align:center;margin:16px 0">'+
@@ -2255,9 +2348,9 @@ function renderUebeplanCards(){
         if(matchIdx>=0)secIdx=matchIdx;
       }
       
-      // Check if practiced today - match by piece+section or just piece name
+      // Check if practiced today - exact match by piece+section
       var pKey=(item.piece||'')+(item.section?'::'+item.section:'');
-      var done=practicedToday[pKey]||practicedPieces[item.piece||'']||false;
+      var done=practicedToday[pKey]||false;
       if(done)doneCount++;
       
       if(done){
