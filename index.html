@@ -2265,20 +2265,22 @@ function generateUebeplan(){
     if(diff>0)daysToLesson='Nächster Unterricht in '+diff+' Tagen.';
   }
   
-  var prompt='Erstelle einen Gitarren-Übeplan. '+minutes+' Minuten Zeit. '+daysToLesson+' '+weekInfo+'\n\nStücke:\n'+pData+'\n\n'+
-    'PRIORITÄTEN:\n'+
-    '- Stücke mit Status "hausaufgabe" haben VORRANG: ca. 60-70% der Zeit\n'+
-    '- Wenn keine Hausaufgaben vorhanden: Stücke priorisieren die am weitesten vom Zieltempo entfernt sind oder am längsten nicht geübt wurden\n'+
-    '- Stücke mit Status "aktiv" bekommen den Rest, damit sie nicht einrosten\n'+
-    '- Stücke weit vom Zieltempo brauchen mehr Zeit als solche die fast fertig sind\n'+
-    '- Beginne mit etwas Leichtem zum Aufwärmen (5 Min)\n'+
-    '- Schwieriges (weit vom Ziel) in die Mitte bei höchster Konzentration\n'+
-    '- Am Ende ein Stück im Spielen-Modus durchspielen für Auftrittssicherheit\n'+
-    '- Max 10-15 Min pro Abschnitt, dann wechseln\n\n'+
-    'WICHTIG: Antworte AUSSCHLIESSLICH mit einem JSON-Array. Kein Text davor oder danach. Keine Markdown-Backticks. Nur das reine JSON-Array.\n\n'+
-    'Format: [{"pieceId":1,"piece":"Stückname","sectionIdx":0,"section":"Takte 1-4","minutes":10,"bpm":60,"comment":"Kurzer Tipp auf Deutsch"}]\n\n'+
-    'pieceId: Verwende die ID aus der Stücke-Liste oben. Wenn nicht vorhanden (z.B. Aufwärmen), setze pieceId auf 0.\n'+
-    'Summe der Minuten = '+minutes+'. Maximal 6 Einträge. Comment: 3-6 Worte, motivierend.';
+  var prompt='Du erstellst einen Gitarren-Übeplan als JSON.\n\n'+
+    'VERFÜGBARE ZEIT: EXAKT '+minutes+' Minuten. Die Summe aller "minutes" Felder MUSS GENAU '+minutes+' ergeben!\n\n'+
+    daysToLesson+' '+weekInfo+'\n\n'+
+    'VERFÜGBARE STÜCKE (NUR diese verwenden, KEINE anderen erfinden!):\n'+pData+'\n\n'+
+    'REGELN:\n'+
+    '1. NUR Stücke aus der Liste oben verwenden! Erfinde KEINE neuen Stücke.\n'+
+    '2. Verwende die exakte pieceId und den exakten Stücknamen aus der Liste.\n'+
+    '3. "hausaufgabe" Stücke: 60-70% der Zeit\n'+
+    '4. Max 10-15 Min pro Eintrag\n'+
+    '5. Aufwärmen am Anfang mit leichtem Stück (5 Min)\n'+
+    '6. Schwieriges in die Mitte\n'+
+    '7. Am Ende durchspielen\n'+
+    '8. JEDER Eintrag MUSS ein "minutes" Feld > 0 haben!\n'+
+    '9. Maximal 6 Einträge\n\n'+
+    'ANTWORTFORMAT: Nur ein JSON-Array, KEIN anderer Text!\n'+
+    '[{"pieceId":1,"piece":"EXAKTER Name","sectionIdx":0,"section":"EXAKTER Taktname","minutes":10,"bpm":60,"comment":"3-5 Worte deutsch"}]';
   
   fetch('https://api.anthropic.com/v1/messages',{
     method:'POST',
@@ -2286,14 +2288,51 @@ function generateUebeplan(){
     body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:500,messages:[{role:'user',content:prompt}]})
   }).then(function(r){return r.json();}).then(function(data){
     var text=(data.content&&data.content[0])?data.content[0].text:'';
-    // Try to parse as JSON
     var plan=null;
     try{
       var clean=text.replace(/```json|```/g,'').trim();
       plan=JSON.parse(clean);
     }catch(e){
-      // Fallback: save as text
       plan=null;
+    }
+    // Validate plan entries against actual pieces
+    if(plan&&Array.isArray(plan)){
+      plan=plan.filter(function(item){
+        if(!item||typeof item!=='object')return false;
+        if(!item.minutes||item.minutes<=0)return false;
+        if(!item.piece)return false;
+        // Verify piece exists in our list (by ID or name)
+        var found=false;
+        if(item.pieceId){found=pieces.some(function(p){return p.id===item.pieceId&&p.status!=='ruhend';});}
+        if(!found){found=pieces.some(function(p){return p.name===item.piece&&p.status!=='ruhend';});}
+        if(!found){
+          // Try fuzzy match (KI might use slightly different names)
+          found=pieces.some(function(p){
+            return p.status!=='ruhend'&&(p.name.toLowerCase().indexOf(item.piece.toLowerCase())>=0||item.piece.toLowerCase().indexOf(p.name.toLowerCase())>=0);
+          });
+          if(found){
+            // Fix the piece name and ID to match
+            var match=pieces.find(function(p){return p.status!=='ruhend'&&(p.name.toLowerCase().indexOf(item.piece.toLowerCase())>=0||item.piece.toLowerCase().indexOf(p.name.toLowerCase())>=0);});
+            if(match){item.piece=match.name;item.pieceId=match.id;}
+          }
+        }
+        return found;
+      });
+      // Fix: ensure minutes sum matches requested time
+      var totalPlanMin=plan.reduce(function(a,item){return a+(item.minutes||0);},0);
+      if(plan.length&&totalPlanMin!==minutes){
+        var factor=minutes/totalPlanMin;
+        var assigned=0;
+        plan.forEach(function(item,i){
+          if(i<plan.length-1){
+            item.minutes=Math.max(2,Math.round(item.minutes*factor));
+            assigned+=item.minutes;
+          }else{
+            item.minutes=Math.max(2,minutes-assigned);
+          }
+        });
+      }
+      if(!plan.length)plan=null;
     }
     var cached={date:new Date().toISOString(),plan:plan,text:plan?null:text};
     try{localStorage.setItem('uz-uebeplan',JSON.stringify(cached));}catch(e){}
