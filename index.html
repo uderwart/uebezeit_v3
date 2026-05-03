@@ -573,6 +573,55 @@ function showDetail(id){
   renderDetail(id);
 }
 
+function buildHeatmap(){
+  if(!sessions.length)return '';
+  
+  // Build map of minutes per day for last 90 days
+  var dayMap={};
+  var maxMin=0;
+  sessions.forEach(function(s){
+    var dayStr=new Date(s.date).toDateString();
+    dayMap[dayStr]=(dayMap[dayStr]||0)+Math.round(s.totalSec/60);
+    if(dayMap[dayStr]>maxMin)maxMin=dayMap[dayStr];
+  });
+  if(maxMin===0)return '';
+  
+  // Generate 90 days grid (today = last cell)
+  var today=new Date();today.setHours(0,0,0,0);
+  var cells=[];
+  for(var i=89;i>=0;i--){
+    var d=new Date(today);d.setDate(d.getDate()-i);
+    var mins=dayMap[d.toDateString()]||0;
+    var intensity=mins>0?Math.max(0.15,Math.min(1,mins/maxMin)):0;
+    var color=mins>0?'rgba(199,106,74,'+intensity+')':'var(--surface2)';
+    var dateStr=d.toLocaleDateString('de-DE',{day:'numeric',month:'short'});
+    cells.push('<div onclick="showHeatmapDay(\''+d.toISOString()+'\')" style="width:14px;height:14px;border-radius:3px;background:'+color+';cursor:pointer" title="'+dateStr+': '+mins+' Min"></div>');
+  }
+  
+  // Arrange in rows of 18
+  var rows='';
+  for(var r=0;r<cells.length;r+=18){
+    rows+='<div style="display:flex;gap:2px;justify-content:flex-end">'+cells.slice(r,r+18).join('')+'</div>';
+  }
+  
+  return '<div class="card" style="padding:10px">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-size:10px;color:var(--muted)">früher</span><span style="font-size:10px;color:var(--muted)">heute</span></div>'+
+    '<div style="display:flex;flex-direction:column;gap:2px">'+rows+'</div>'+
+    '<div id="heatmap-detail" style="text-align:center;font-size:11px;color:var(--muted);margin-top:6px"></div>'+
+  '</div>';
+}
+
+function showHeatmapDay(iso){
+  var d=new Date(iso);
+  var dayStr=d.toDateString();
+  var daySessions=sessions.filter(function(s){return new Date(s.date).toDateString()===dayStr;});
+  var mins=daySessions.reduce(function(a,s){return a+Math.round(s.totalSec/60);},0);
+  var count=daySessions.length;
+  var dateStr=d.toLocaleDateString('de-DE',{weekday:'short',day:'numeric',month:'long'});
+  var el=document.getElementById('heatmap-detail');
+  if(el)el.innerHTML=mins>0?dateStr+' · '+mins+' Min · '+count+' Einträge':dateStr+' · Nicht geübt';
+}
+
 // === HOME ===
 function practiceBanner(){
   if(!practicing||!practiceStart)return '';
@@ -655,6 +704,7 @@ function renderHome(){
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><span style="font-size:13px;font-weight:500">'+weekMin+' / '+settings.weeklyMin+' Min</span><span style="font-size:12px;color:var(--muted)">'+weekPct+'%</span></div>'+
       '<div class="progress-bar" style="height:8px"><div class="progress-fill" style="width:'+weekPct+'%"></div></div>'+
     '</div>'+
+    buildHeatmap()+
     renderUebeplanCards()+
     '<button class="btn mt12" onclick="startPrimeTime()" style="width:100%;background:var(--accent-soft);color:var(--accent);border:1px solid var(--accent);font-size:15px;padding:14px"><span style="font-size:18px">✨</span> Prime Time</button>'+
     hwHtml+activeHtml+
