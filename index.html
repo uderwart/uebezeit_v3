@@ -851,6 +851,7 @@ function renderDetail(id){
     '<div style="display:flex;gap:6px;margin-bottom:12px">'+statusBtns+'</div>'+
     prHtml+
     '<div class="stitle">Takte</div>'+secsHtml+
+    '<button class="btn mt8 mb12" onclick="startWholepiece('+p.id+')" style="width:100%;background:var(--accent3);color:#fff;font-size:15px">🎭 Ganzes Stück spielen</button>'+
     linksHtml+
     chartsHtml+
     ratingHtml+
@@ -1352,6 +1353,21 @@ var pendingEntry=null;
 // Plan-driven session (Regisseur)
 // Uses planActive, planItems, planIndex, planPieceCountdown, planWarningShown from Plan Runner section
 
+function getSessionTargetMin(){
+  // If a plan is cached from today, use plan total time
+  try{
+    var cached=JSON.parse(localStorage.getItem('uz-uebeplan'));
+    if(cached&&cached.plan&&Array.isArray(cached.plan)){
+      var planDate=new Date(cached.date);
+      var today=new Date();
+      if(planDate.toDateString()===today.toDateString()){
+        return cached.plan.reduce(function(a,item){return a+(item.minutes||0);},0);
+      }
+    }
+  }catch(e){}
+  return settings.sessionMin||45;
+}
+
 // Pomodoro
 var POMO_WORK=25*60,POMO_BREAK=5*60;
 var pomoBreakActive=false,pomoBreakTimer=null,pomoBreakRemaining=0;
@@ -1384,6 +1400,25 @@ function startPracticeFromDetail(pid,si){
   renderPractice();
 }
 
+function startWholepiece(pid){
+  var p=pieces.find(function(x){return x.id===pid;});
+  if(!p)return;
+  
+  practicePieceId=pid;
+  practiceSectionIdx=-1;
+  practiceMode='spielen';
+  practiceElapsed=0;
+  practicePaused=false;pauseStart=null;totalPausedMs=0;
+  practiceStart=null;
+  rounds=[];roundStart=null;
+  practicing=true;
+  if(!planActive)sessionTotalElapsed=0;
+  
+  document.querySelectorAll(".view").forEach(function(x){x.classList.remove("on");});
+  document.getElementById("v-practice").classList.add("on");
+  renderPractice();
+}
+
 function startPracticeTimer(){
   if(practiceStart)return;
   practiceStart=Date.now();
@@ -1397,7 +1432,7 @@ function startPracticeTimer(){
       if(planActive)checkPlanCountdown();
       // Check if session time is up (only when not in plan mode)
       if(!planActive){
-        var totalSec=(settings.sessionMin||45)*60;
+        var totalSec=getSessionTargetMin()*60;
         if(sessionTotalElapsed>=totalSec&&sessionTotalElapsed-1<totalSec){
           showTimeUp();
         }
@@ -1412,8 +1447,10 @@ function renderPractice(){
   if(!p)return;
   var el=document.getElementById("v-practice");
   var isRunning=!!practiceStart;
-  var sec=(p.sections||[])[practiceSectionIdx];
+  var sec=practiceSectionIdx>=0?(p.sections||[])[practiceSectionIdx]:null;
   var isPlay=practiceMode==='spielen';
+  var isWhole=practiceSectionIdx<0;
+  var sectionName=isWhole?'Ganzes Stück':(sec?sec.name:'');
   
   // Tempo card (only for üben)
   var tempoHtml='';
@@ -1440,7 +1477,7 @@ function renderPractice(){
   var linksBtn=hasLinks?'<div style="text-align:center;margin-top:6px"><button class="btn btn-xs btn-soft" onclick="togglePracticeLinks()" style="color:var(--accent2)">🎵 Noten & Links</button></div><div id="practice-links" style="display:none;margin-top:6px">'+renderPieceLinks(p)+'</div>':'';
   
   // Current focus display
-  var currentFocus=(sec?sec.focus:[])||[];
+  var currentFocus=sec?(sec.focus||[]):FOCUS_OPTIONS.filter(function(fo){return fo.mode==='spielen';}).map(function(fo){return fo.key;});
   var focusInfo=currentFocus.map(function(f){
     var fo=FOCUS_OPTIONS.find(function(x){return x.key===f;});
     return fo?fo.label:f;
@@ -1454,7 +1491,7 @@ function renderPractice(){
         '<button onclick="switchPracticeMode(\'spielen\')" style="padding:4px 12px;border-radius:8px;font-size:11px;font-weight:700;border:none;cursor:pointer;background:'+(isPlay?'var(--accent3)':'var(--surface2)')+';color:'+(isPlay?'#fff':'var(--muted)')+'">🎭 Spielen</button>'+
       '</div>'+
       '<div style="font-family:\'DM Serif Display\',serif;font-size:20px">'+esc(p.name)+'</div>'+
-      '<div style="font-size:12px;color:var(--muted)">'+esc(p.cat)+(sec?' · '+esc(sec.name):'')+'</div>'+
+      '<div style="font-size:12px;color:var(--muted)">'+esc(p.cat)+(sectionName?' · '+esc(sectionName):'')+'</div>'+
       (focusInfo?'<button onclick="togglePracticeFocus()" style="font-size:11px;color:var(--accent2);margin-top:4px;cursor:pointer;border:1px solid var(--border);background:var(--surface);border-radius:8px;padding:6px 14px;min-height:36px;font-family:inherit">'+esc(focusInfo)+' ✎</button>':'')+
     '</div>'+
     '<div id="practice-focus-edit" style="display:none;margin:8px 0"></div>'+
@@ -1481,7 +1518,7 @@ function updatePracticeTimer(){
   var el=document.getElementById("p-timer");if(el)el.textContent=fmtCountdown();
   var sub=document.getElementById("p-timer-sub");if(sub)sub.innerHTML=fmtTimerSub(true);
   // Check if session time is up
-  var totalSec=(settings.sessionMin||45)*60;
+  var totalSec=getSessionTargetMin()*60;
   if(sessionTotalElapsed>=totalSec&&sessionTotalElapsed-1<totalSec){
     showTimeUp();
   }
@@ -1493,7 +1530,7 @@ function fmtCountdown(){
     if(remaining<=0)return '0:00';
     return fmt(remaining);
   }
-  var totalSec=(settings.sessionMin||45)*60;
+  var totalSec=getSessionTargetMin()*60;
   var remaining=totalSec-sessionTotalElapsed;
   if(remaining<=0)return '+'+fmt(Math.abs(remaining));
   return fmt(remaining);
@@ -1505,8 +1542,8 @@ function fmtTimerSub(isRunning){
     var info=item?(planIndex+1)+'/'+planItems.length+' · '+fmt(practiceElapsed)+' geübt':'';
     return info;
   }
-  if(!isRunning)return (settings.sessionMin||45)+' Min geplant';
-  var totalSec=(settings.sessionMin||45)*60;
+  if(!isRunning)return getSessionTargetMin()+' Min geplant';
+  var totalSec=getSessionTargetMin()*60;
   var remaining=totalSec-sessionTotalElapsed;
   if(remaining<=0)return '<span style="color:var(--accent);font-weight:600">Zeit ist um · '+fmt(sessionTotalElapsed)+' geübt</span>';
   return fmt(sessionTotalElapsed)+' geübt';
@@ -1519,7 +1556,7 @@ function showTimeUp(){
   el.innerHTML='<div style="text-align:center;padding:30px 16px">'+
     '<div style="font-size:48px;margin-bottom:12px">🎸</div>'+
     '<div style="font-family:\'DM Serif Display\',serif;font-size:24px;margin-bottom:8px">Zeit ist um!</div>'+
-    '<div style="font-size:14px;color:var(--muted);margin-bottom:16px">'+(settings.sessionMin||45)+' Minuten geschafft. Gut gemacht!</div>'+
+    '<div style="font-size:14px;color:var(--muted);margin-bottom:16px">'+getSessionTargetMin()+' Minuten geschafft. Gut gemacht!</div>'+
     '<div class="card"><div style="font-size:13px;font-weight:500;text-align:center">'+fmt(sessionTotalElapsed)+' geübt</div></div>'+
     '<button class="btn btn-go mt8" onclick="resumeAfterTimeUp()" style="font-size:16px;padding:16px">Noch ein Stück?</button>'+
     '<button class="btn btn-soft mt8" onclick="stopPractice(false)">⏹ Beenden</button>'+
@@ -1666,11 +1703,14 @@ function stopPractice(abort){
         tempoHist[key].push({date:new Date().toISOString(),bpm:maxBpm});
       }
       
+      var sec=practiceSectionIdx>=0?(p.sections||[])[practiceSectionIdx]:null;
+      var saveSectionName=sec?sec.name:(practiceSectionIdx<0?'Ganzes Stück':null);
+      
       pendingEntry={
-        pieceName:p.name,section:sec?sec.name:null,mode:practiceMode,
+        pieceName:p.name,section:saveSectionName,mode:practiceMode,
         rounds:practiceMode==='spielen'?[]:[].concat(rounds),
         totalSec:totalSec,ratings:{},errorFree:null,
-        focus:sec?sec.focus:['sauberkeit']
+        focus:sec?(sec.focus||['sauberkeit']):FOCUS_OPTIONS.filter(function(fo){return fo.mode==='spielen';}).map(function(fo){return fo.key;})
       };
       save();
       practicing=false;practicePieceId=null;rounds=[];practiceStart=null;
@@ -2347,40 +2387,61 @@ function generateUebeplan(){
     }
     // Validate plan entries against actual pieces
     if(plan&&Array.isArray(plan)){
-      plan=plan.filter(function(item){
-        if(!item||typeof item!=='object')return false;
-        if(!item.minutes||item.minutes<=0)return false;
-        if(!item.piece)return false;
-        // Verify piece exists in our list (by ID or name)
-        var found=false;
-        if(item.pieceId){found=pieces.some(function(p){return p.id===item.pieceId&&p.status!=='ruhend';});}
-        if(!found){found=pieces.some(function(p){return p.name===item.piece&&p.status!=='ruhend';});}
-        if(!found){
-          // Try fuzzy match (KI might use slightly different names)
-          found=pieces.some(function(p){
-            return p.status!=='ruhend'&&(p.name.toLowerCase().indexOf(item.piece.toLowerCase())>=0||item.piece.toLowerCase().indexOf(p.name.toLowerCase())>=0);
-          });
-          if(found){
-            // Fix the piece name and ID to match
-            var match=pieces.find(function(p){return p.status!=='ruhend'&&(p.name.toLowerCase().indexOf(item.piece.toLowerCase())>=0||item.piece.toLowerCase().indexOf(p.name.toLowerCase())>=0);});
-            if(match){item.piece=match.name;item.pieceId=match.id;}
-          }
-        }
-        return found;
-      });
-      // Fix: ensure minutes sum matches requested time
-      var totalPlanMin=plan.reduce(function(a,item){return a+(item.minutes||0);},0);
-      if(plan.length&&totalPlanMin!==minutes){
-        var factor=minutes/totalPlanMin;
-        var assigned=0;
-        plan.forEach(function(item,i){
-          if(i<plan.length-1){
-            item.minutes=Math.max(2,Math.round(item.minutes*factor));
-            assigned+=item.minutes;
-          }else{
-            item.minutes=Math.max(2,minutes-assigned);
-          }
+      var validPlan=[];
+      plan.forEach(function(item){
+        if(!item||typeof item!=='object')return;
+        if(!item.piece)return;
+        if(!item.minutes)item.minutes=5;// Default 5 min if missing
+        
+        // Try to find piece: exact ID, exact name, case-insensitive, partial match
+        var match=null;
+        if(item.pieceId)match=pieces.find(function(p){return p.id===item.pieceId&&p.status!=='ruhend';});
+        if(!match)match=pieces.find(function(p){return p.name===item.piece&&p.status!=='ruhend';});
+        if(!match)match=pieces.find(function(p){return p.status!=='ruhend'&&p.name.toLowerCase()===item.piece.toLowerCase();});
+        if(!match)match=pieces.find(function(p){
+          return p.status!=='ruhend'&&(
+            p.name.toLowerCase().indexOf(item.piece.toLowerCase())>=0||
+            item.piece.toLowerCase().indexOf(p.name.toLowerCase())>=0||
+            p.name.replace(/[áàâä]/g,'a').replace(/[éèêë]/g,'e').toLowerCase()===item.piece.replace(/[áàâä]/g,'a').replace(/[éèêë]/g,'e').toLowerCase()
+          );
         });
+        
+        if(match){
+          item.piece=match.name;
+          item.pieceId=match.id;
+          // Also fix section name
+          if(item.section){
+            var secMatch=null;
+            (match.sections||[]).forEach(function(s,si){
+              if(s.name===item.section)secMatch={idx:si};
+              else if(s.name.toLowerCase()===item.section.toLowerCase())secMatch={idx:si,name:s.name};
+              else if(s.name.toLowerCase().indexOf(item.section.toLowerCase())>=0)secMatch={idx:si,name:s.name};
+            });
+            if(secMatch){
+              item.sectionIdx=secMatch.idx;
+              if(secMatch.name)item.section=secMatch.name;
+            }
+          }
+          validPlan.push(item);
+        }
+      });
+      plan=validPlan;
+      
+      // Fix minutes sum
+      if(plan.length){
+        var totalPlanMin=plan.reduce(function(a,item){return a+(item.minutes||0);},0);
+        if(totalPlanMin!==minutes){
+          var factor=minutes/totalPlanMin;
+          var assigned=0;
+          plan.forEach(function(item,i){
+            if(i<plan.length-1){
+              item.minutes=Math.max(2,Math.round(item.minutes*factor));
+              assigned+=item.minutes;
+            }else{
+              item.minutes=Math.max(2,minutes-assigned);
+            }
+          });
+        }
       }
       if(!plan.length)plan=null;
     }
