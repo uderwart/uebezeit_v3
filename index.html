@@ -2185,6 +2185,7 @@ function renderLesson(){
       '</div>';
     });
   }
+  archiveHtml+='<button class="btn btn-soft mt8" onclick="showAddLesson()">+ Vergangenen Unterricht eintragen</button>';
   
   el.innerHTML=practiceBanner()+'<div class="stitle">Unterricht</div>'+dateHtml+hwHtml+planHtml+qHtml+fbHtml+sinceHtml+actionsHtml+archiveHtml;
 }
@@ -2323,6 +2324,53 @@ function finishLesson(){
   lesson.feedback='';
   lesson.nextDate=null;
   save();renderLesson();
+}
+
+function showAddLesson(){
+  var el=document.getElementById("v-lesson");
+  el.innerHTML=
+    '<button class="btn btn-xs btn-soft mb12" onclick="renderLesson()" style="width:auto">← Zurück</button>'+
+    '<div class="stitle">Unterricht nachtragen</div>'+
+    '<div class="card">'+
+      '<div style="font-size:10px;color:var(--muted);margin-bottom:4px">Datum</div>'+
+      '<input type="date" id="addl-date" value="'+new Date().toISOString().substring(0,10)+'" style="margin-bottom:8px;font-size:14px;padding:8px">'+
+      '<div style="font-size:10px;color:var(--muted);margin-bottom:4px">Feedback vom Lehrer</div>'+
+      '<textarea id="addl-feedback" placeholder="Was hat der Lehrer gesagt?" style="width:100%;height:80px;font-size:14px;padding:10px;border:1px solid var(--border);border-radius:10px;font-family:inherit;resize:vertical;margin-bottom:8px"></textarea>'+
+      '<div style="font-size:10px;color:var(--muted);margin-bottom:4px">Fragen die besprochen wurden (eine pro Zeile)</div>'+
+      '<textarea id="addl-questions" placeholder="Fingersatz Takt 12&#10;Dynamik in Romanza" style="width:100%;height:60px;font-size:14px;padding:10px;border:1px solid var(--border);border-radius:10px;font-family:inherit;resize:vertical;margin-bottom:12px"></textarea>'+
+    '</div>'+
+    '<button class="btn btn-go" onclick="saveAddLesson()">Speichern</button>';
+}
+
+function saveAddLesson(){
+  var dateEl=document.getElementById('addl-date');
+  var fbEl=document.getElementById('addl-feedback');
+  var qEl=document.getElementById('addl-questions');
+  if(!dateEl)return;
+  
+  var questions=[];
+  if(qEl&&qEl.value.trim()){
+    qEl.value.trim().split('\n').forEach(function(q){
+      if(q.trim())questions.push(q.trim());
+    });
+  }
+  
+  var archive=[];
+  try{archive=JSON.parse(localStorage.getItem('uz-lesson-archive'))||[];}catch(e){}
+  
+  archive.unshift({
+    date:dateEl.value+'T12:00:00',
+    feedback:fbEl?fbEl.value.trim():'',
+    questions:questions,
+    sessions:0,
+    minutes:0,
+    pieces:[],
+    homework:[]
+  });
+  
+  if(archive.length>50)archive=archive.slice(0,50);
+  try{localStorage.setItem('uz-lesson-archive',JSON.stringify(archive));}catch(e){}
+  renderLesson();
 }
 
 function generateUebeplan(){
@@ -2737,7 +2785,7 @@ function buildWeekOverview(){
 function renderLog(){
   var el=document.getElementById("v-log");
   if(!sessions.length){
-    el.innerHTML='<div class="stitle">Tagebuch</div><div class="empty"><div style="font-size:28px;margin-bottom:8px">📝</div>Noch keine Einträge.<br>Nach deiner ersten Übung erscheint hier dein Tagebuch.</div>';
+    el.innerHTML='<div class="stitle">Tagebuch</div><div class="empty"><div style="font-size:28px;margin-bottom:8px">📝</div>Noch keine Einträge.<br>Nach deiner ersten Übung erscheint hier dein Tagebuch.</div><button class="btn btn-soft mt12" onclick="showAddEntry()">+ Eintrag nachtragen</button>';
     return;
   }
   
@@ -2829,6 +2877,7 @@ function renderLog(){
     '</div>';
   });
   
+  html+='<button class="btn btn-soft mt12" onclick="showAddEntry()">+ Eintrag nachtragen</button>';
   el.innerHTML=html;
 }
 
@@ -2843,6 +2892,94 @@ function toggleLogDay(idx){
     body.style.display='none';
     if(arrow)arrow.textContent='▼';
   }
+}
+
+function showAddEntry(){
+  var el=document.getElementById("v-log");
+  // Build piece select
+  var opts=pieces.filter(function(p){return p.status!=='ruhend';}).map(function(p){
+    return '<option value="'+p.id+'">'+esc(p.name)+'</option>';
+  }).join('');
+  
+  el.innerHTML=
+    '<button class="btn btn-xs btn-soft mb12" onclick="renderLog()" style="width:auto">← Zurück</button>'+
+    '<div class="stitle">Eintrag nachtragen</div>'+
+    '<div class="card">'+
+      '<div style="font-size:10px;color:var(--muted);margin-bottom:4px">Datum & Uhrzeit</div>'+
+      '<div style="display:flex;gap:8px;margin-bottom:8px"><input type="date" id="add-date" value="'+new Date().toISOString().substring(0,10)+'" style="flex:1;font-size:14px;padding:8px"><input type="time" id="add-time" value="'+new Date().toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})+'" style="width:90px;font-size:14px;padding:8px"></div>'+
+      '<div style="font-size:10px;color:var(--muted);margin-bottom:4px">Stück</div>'+
+      '<select id="add-piece" onchange="updateAddSections()" style="margin-bottom:8px;font-size:14px;padding:8px"><option value="">– Stück wählen –</option><option value="primetime">✨ Prime Time</option>'+opts+'</select>'+
+      '<div id="add-section-wrap"></div>'+
+      '<div style="font-size:10px;color:var(--muted);margin-bottom:4px">Dauer (Minuten)</div>'+
+      '<input type="number" id="add-minutes" value="15" min="1" style="margin-bottom:8px;font-size:14px;padding:8px">'+
+      '<div style="font-size:10px;color:var(--muted);margin-bottom:4px">Notiz (optional)</div>'+
+      '<input type="text" id="add-note" placeholder="Was hast du geübt?" style="margin-bottom:12px;font-size:14px;padding:8px">'+
+    '</div>'+
+    '<button class="btn btn-go" onclick="saveAddEntry()">Speichern</button>';
+}
+
+function updateAddSections(){
+  var sel=document.getElementById('add-piece');
+  var wrap=document.getElementById('add-section-wrap');
+  if(!sel||!wrap)return;
+  var pid=parseInt(sel.value);
+  if(!pid||sel.value==='primetime'){wrap.innerHTML='';return;}
+  var p=pieces.find(function(x){return x.id===pid;});
+  if(!p||!p.sections||!p.sections.length){wrap.innerHTML='';return;}
+  var opts=p.sections.map(function(s,si){return '<option value="'+si+'">'+esc(s.name)+'</option>';}).join('');
+  wrap.innerHTML='<div style="font-size:10px;color:var(--muted);margin-bottom:4px">Abschnitt</div>'+
+    '<select id="add-section" style="margin-bottom:8px;font-size:14px;padding:8px"><option value="-1">Ganzes Stück</option>'+opts+'</select>';
+}
+
+function saveAddEntry(){
+  var dateEl=document.getElementById('add-date');
+  var timeEl=document.getElementById('add-time');
+  var pieceEl=document.getElementById('add-piece');
+  var secEl=document.getElementById('add-section');
+  var minEl=document.getElementById('add-minutes');
+  var noteEl=document.getElementById('add-note');
+  if(!dateEl||!pieceEl||!pieceEl.value)return;
+  
+  var dateStr=dateEl.value+'T'+(timeEl?timeEl.value:'12:00')+':00';
+  var totalSec=(parseInt(minEl?minEl.value:15)||15)*60;
+  var note=noteEl?noteEl.value.trim():'';
+  
+  var pName='✨ Prime Time';
+  var sName=null;
+  var mode='primetime';
+  
+  if(pieceEl.value!=='primetime'){
+    var p=pieces.find(function(x){return x.id===parseInt(pieceEl.value);});
+    if(p){
+      pName=p.name;
+      mode='ueben';
+      if(secEl){
+        var si=parseInt(secEl.value);
+        if(si>=0&&p.sections[si]){
+          sName=p.sections[si].name;
+          mode=p.sections[si].mode||'ueben';
+        }else{
+          sName='Ganzes Stück';
+          mode='spielen';
+        }
+      }
+    }
+  }
+  
+  sessions.push({
+    date:dateStr,
+    totalSec:totalSec,
+    pieces:[{
+      name:pName,section:sName,mode:mode,
+      rounds:[],totalSec:totalSec,
+      techRating:0,exprRating:0,flowRating:0,
+      errorFree:null,note:note
+    }]
+  });
+  // Sort sessions by date
+  sessions.sort(function(a,b){return new Date(a.date)-new Date(b.date);});
+  save();
+  renderLog();
 }
 
 function editLogTime(sessionIdx,pieceName){
