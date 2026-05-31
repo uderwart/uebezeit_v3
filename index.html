@@ -546,6 +546,7 @@ function nav(v){
       pauseStart=Date.now();
     }
     practiceReturnView=v;
+    savePending();
   }
   // If navigating back to practice view
   if(v==='practice'&&practicing){
@@ -623,12 +624,55 @@ function showHeatmapDay(iso){
 }
 
 // === HOME ===
+function resumePractice(){
+  document.querySelectorAll(".view").forEach(function(x){x.classList.remove("on");});
+  document.getElementById("v-practice").classList.add("on");
+  practiceReturnView=null;
+  if(practiceMode==='primetime')renderPrimeTime();else renderPractice();
+}
+function resumeRating(){
+  document.querySelectorAll(".view").forEach(function(x){x.classList.remove("on");});
+  document.getElementById("v-practice").classList.add("on");
+  practiceReturnView=null;
+  showRatingScreen();
+}
+function recoveryBanner(){
+  if(!pendingRecovery||practicing)return '';
+  var s=pendingRecovery;
+  var label='✨ Prime Time';
+  if(s.pieceId){var p=pieces.find(function(x){return x.id===s.pieceId;});if(p)label=esc(p.name);}
+  var mins=Math.round((s.elapsed||0)/60);
+  var whenStr=new Date(s.ts).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});
+  return '<div style="padding:12px 14px;background:var(--accent);color:#fff;border-radius:10px;margin-bottom:10px">'+
+    '<div style="font-size:13px;font-weight:700;margin-bottom:2px">⏸ Unterbrochene Übung gefunden</div>'+
+    '<div style="font-size:11px;opacity:.9;margin-bottom:8px">'+label+(s.plan?' · 🤖 Übeplan':'')+' · '+(mins>0?mins+' Min':fmt(s.elapsed||0))+' · '+whenStr+'</div>'+
+    '<div style="display:flex;gap:8px">'+
+      '<button class="btn btn-xs" onclick="restorePending()" style="flex:1;background:#fff;color:var(--accent);font-weight:700">▶ Fortsetzen</button>'+
+      '<button class="btn btn-xs" onclick="discardPending()" style="flex:1;background:rgba(255,255,255,.2);color:#fff">Verwerfen</button>'+
+    '</div>'+
+  '</div>';
+}
 function practiceBanner(){
+  // Active plan but not currently inside a running piece (navigated away / rating open)
+  if(planActive&&!(practicing&&practiceStart)){
+    var pos=planItems?(planIndex+1)+'/'+planItems.length:'';
+    if(pendingEntry){
+      return '<div onclick="resumeRating()" style="cursor:pointer;padding:10px 14px;background:var(--accent2);color:#fff;border-radius:10px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center">'+
+        '<div><div style="font-size:12px;font-weight:600">🤖 Übeplan · Bewertung offen</div>'+
+        '<div style="font-size:11px;opacity:.85">'+esc(pendingEntry.pieceName||'')+' · Schritt '+pos+'</div></div>'+
+        '<div style="font-size:14px;font-weight:700">▶ Weiter</div></div>';
+    }
+    var ci=planItems?planItems[planIndex]:null;
+    return '<div onclick="resumePlanPiece()" style="cursor:pointer;padding:10px 14px;background:var(--accent2);color:#fff;border-radius:10px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center">'+
+      '<div><div style="font-size:12px;font-weight:600">🤖 Übeplan läuft</div>'+
+      '<div style="font-size:11px;opacity:.85">'+(ci?esc(ci.piece||'Aufwärmen'):'')+' · Schritt '+pos+'</div></div>'+
+      '<div style="font-size:14px;font-weight:700">▶ Fortsetzen</div></div>';
+  }
   if(!practicing||!practiceStart)return '';
   var p=pieces.find(function(x){return x.id===practicePieceId;});
-  var name=p?esc(p.name):'';
-  return '<div onclick="nav(\'practice\')" style="cursor:pointer;padding:10px 14px;background:var(--accent2);color:#fff;border-radius:10px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center">'+
-    '<div><div style="font-size:12px;font-weight:600">⏸ Üben pausiert</div>'+
+  var name=p?esc(p.name):(practiceMode==='primetime'?'✨ Prime Time':'');
+  return '<div onclick="resumePractice()" style="cursor:pointer;padding:10px 14px;background:var(--accent2);color:#fff;border-radius:10px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center">'+
+    '<div><div style="font-size:12px;font-weight:600">'+(planActive?'🤖 Übeplan pausiert':'⏸ Üben pausiert')+'</div>'+
     '<div style="font-size:11px;opacity:.85">'+name+' · '+fmt(practiceElapsed)+'</div></div>'+
     '<div style="font-size:14px;font-weight:700">▶ Weiter</div>'+
   '</div>';
@@ -694,6 +738,7 @@ function renderHome(){
   }
   
   el.innerHTML=
+    recoveryBanner()+
     practiceBanner()+
     '<div style="text-align:center;padding:16px 0 8px">'+
       '<div style="font-family:\'DM Serif Display\',serif;font-size:20px;color:var(--text)">'+greeting+'</div>'+
@@ -1214,6 +1259,15 @@ function editPiece(id){
     '</div>'+
     '<div class="stitle">Takte</div>'+secsHtml+
     '<button class="add-btn mb12" onclick="savePieceFields('+p.id+');addSection('+p.id+')">+ Takte</button>'+
+    '<div class="card" style="padding:12px;margin-bottom:12px;background:var(--surface2)">'+
+      '<div style="font-size:12px;font-weight:600;margin-bottom:6px">📐 Takte automatisch aufteilen</div>'+
+      '<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">'+
+        '<div><div style="font-size:10px;color:var(--muted)">Takte gesamt</div><input type="number" id="auto-total-'+p.id+'" min="1" max="999" placeholder="z.B. 32" style="width:96px;font-size:14px;padding:8px"></div>'+
+        '<div><div style="font-size:10px;color:var(--muted)">pro Block</div><input type="number" id="auto-block-'+p.id+'" min="1" max="64" value="4" style="width:74px;font-size:14px;padding:8px"></div>'+
+        '<button class="btn btn-soft btn-sm" onclick="autoSplitSections('+p.id+')" style="flex:1;min-width:110px">📐 Erzeugen</button>'+
+      '</div>'+
+      '<div style="font-size:10px;color:var(--muted);margin-top:6px">Erzeugt Block-Abschnitte (T. 1–4, 5–8 …). Deine manuellen Abschnitte bleiben erhalten; vorhandene Auto-Blöcke werden ersetzt.</div>'+
+    '</div>'+
     linkEditor(notenLinks,'Noten','noten','🎵')+
     linkEditor(otherLinks,'Links','link','🔗')+
     '<button class="btn btn-go mt12" onclick="savePieceFields('+p.id+');renderDetail('+p.id+')">✓ Speichern</button>';
@@ -1319,6 +1373,31 @@ function addSection(pid){
   save();editPiece(pid);
 }
 
+function autoSplitSections(pid){
+  savePieceFields(pid);
+  var p=pieces.find(function(x){return x.id===pid;});if(!p)return;
+  var totalEl=document.getElementById('auto-total-'+pid);
+  var blockEl=document.getElementById('auto-block-'+pid);
+  var total=parseInt(totalEl?totalEl.value:0)||0;
+  var block=parseInt(blockEl?blockEl.value:0)||0;
+  if(total<1||block<1)return;
+  if(block>total)block=total;
+  // Default BPM inherited from an existing section that has a target
+  var ref=(p.sections||[]).find(function(s){return s.targetBpm;})||{};
+  var defStart=ref.startBpm||0,defTarget=ref.targetBpm||0;
+  // Keep manual sections, drop previous auto blocks
+  var manual=(p.sections||[]).filter(function(s){return !s.auto;});
+  var maxId=manual.reduce(function(a,s){return Math.max(a,s.id||0);},0);
+  var autoSecs=[];
+  for(var start=1;start<=total;start+=block){
+    var end=Math.min(start+block-1,total);
+    maxId++;
+    autoSecs.push({id:maxId,name:(start===end?('T. '+start):('T. '+start+'–'+end)),mode:'ueben',startBpm:defStart,targetBpm:defTarget,focus:['sauberkeit'],auto:true});
+  }
+  p.sections=manual.concat(autoSecs);
+  save();editPiece(pid);
+}
+
 function delSection(pid,si){
   var p=pieces.find(function(x){return x.id===pid;});
   if(!p||p.sections.length<=1)return;
@@ -1419,26 +1498,86 @@ function startWholepiece(pid){
   renderPractice();
 }
 
+// === CRASH RECOVERY ===
+var pendingRecovery=null;
+function savePending(){
+  if(!practicing){clearPending();return;}
+  try{
+    localStorage.setItem("uz-pending",JSON.stringify({
+      ts:Date.now(),
+      pieceId:practicePieceId,
+      sectionIdx:practiceSectionIdx,
+      mode:practiceMode,
+      elapsed:practiceElapsed,
+      tempo:currentTempo,
+      rounds:rounds,
+      sessionElapsed:sessionTotalElapsed,
+      plan:planActive?{items:planItems,index:planIndex,countdown:planPieceCountdown}:null
+    }));
+  }catch(e){}
+}
+function clearPending(){try{localStorage.removeItem("uz-pending");}catch(e){}}
+function loadPending(){
+  try{
+    var s=JSON.parse(localStorage.getItem("uz-pending"));
+    if(!s||!s.elapsed)return null;
+    if((Date.now()-s.ts)>12*3600*1000)return null; // ignore older than 12h
+    return s;
+  }catch(e){return null;}
+}
+function discardPending(){clearPending();pendingRecovery=null;renderHome();}
+function restorePending(){
+  var s=pendingRecovery;if(!s){renderHome();return;}
+  pendingRecovery=null;
+  if(s.plan){planActive=true;planItems=s.plan.items;planIndex=s.plan.index||0;planPieceCountdown=s.plan.countdown||0;planWarningShown=false;planEndAfter=false;}
+  else{endPlanRunner();}
+  practiceMode=s.mode||'ueben';
+  practiceSectionIdx=(s.sectionIdx==null?-1:s.sectionIdx);
+  practicePieceId=s.pieceId||null;
+  currentTempo=s.tempo||currentTempo;
+  rounds=s.rounds||[];
+  sessionTotalElapsed=s.sessionElapsed||s.elapsed;
+  practiceElapsed=s.elapsed;
+  practicing=true;
+  totalPausedMs=0;
+  // Resume paused, carrying the practiced time
+  practiceStart=Date.now()-practiceElapsed*1000;
+  practicePaused=true;pauseStart=Date.now();
+  roundStart=Date.now();
+  clearInterval(practiceTimer);
+  practiceTimer=setInterval(practiceTick,1000);
+  document.querySelectorAll(".view").forEach(function(x){x.classList.remove("on");});
+  document.getElementById("v-practice").classList.add("on");
+  if(practiceMode==='primetime')renderPrimeTime();else renderPractice();
+}
+
+function practiceTick(){
+  if(practicePaused)return;
+  practiceElapsed=Math.round((Date.now()-practiceStart-totalPausedMs)/1000);
+  sessionTotalElapsed++;
+  savePending();
+  if(practiceMode==='primetime'){
+    var pel=document.getElementById("p-timer");
+    if(pel)pel.textContent=fmt(practiceElapsed);
+    return;
+  }
+  updatePracticeTimer();
+  if(planActive)checkPlanCountdown();
+  if(!planActive){
+    var totalSec=getSessionTargetMin()*60;
+    if(sessionTotalElapsed>=totalSec&&sessionTotalElapsed-1<totalSec){
+      showTimeUp();
+    }
+  }
+}
+
 function startPracticeTimer(){
   if(practiceStart)return;
   practiceStart=Date.now();
   roundStart=Date.now();
-  practiceTimer=setInterval(function(){
-    if(!practicePaused){
-      practiceElapsed=Math.round((Date.now()-practiceStart-totalPausedMs)/1000);
-      sessionTotalElapsed++;
-      updatePracticeTimer();
-      // Check plan countdown
-      if(planActive)checkPlanCountdown();
-      // Check if session time is up (only when not in plan mode)
-      if(!planActive){
-        var totalSec=getSessionTargetMin()*60;
-        if(sessionTotalElapsed>=totalSec&&sessionTotalElapsed-1<totalSec){
-          showTimeUp();
-        }
-      }
-    }
-  },1000);
+  clearInterval(practiceTimer);
+  practiceTimer=setInterval(practiceTick,1000);
+  savePending();
   renderPractice();
 }
 
@@ -1509,7 +1648,15 @@ function renderPractice(){
     '</div>'+
     linksBtn+
     '<div id="practice-plan" style="margin-top:6px"></div>'+
-    '<button class="btn btn-xs btn-soft mt8" onclick="togglePracticePlan()" style="width:100%;color:var(--accent2)">📋 Übeplan</button>'+
+    (planActive?
+      '<div class="card" style="margin-top:8px;padding:10px;border-left:3px solid var(--accent2)">'+
+        '<div style="font-size:11px;color:var(--muted);text-align:center;margin-bottom:8px">🤖 KI-Übeplan · Schritt '+(planIndex+1)+'/'+(planItems?planItems.length:'?')+'</div>'+
+        '<div class="row" style="gap:8px">'+
+          '<button class="btn btn-xs btn-soft" onclick="showPlanEditor()" style="flex:1;color:var(--accent2)">✎ Plan bearbeiten</button>'+
+          '<button class="btn btn-xs btn-soft" onclick="stopAndEndPlan()" style="flex:1;color:var(--accent)">⏹ Plan beenden</button>'+
+        '</div>'+
+      '</div>'
+    :'<button class="btn btn-xs btn-soft mt8" onclick="togglePracticePlan()" style="width:100%;color:var(--accent2)">📋 Übeplan</button>')+
     '<div id="rounds-display" style="margin-top:8px"></div>';
   updateRoundsDisplay();
 }
@@ -1577,6 +1724,7 @@ function togglePause(){
     practicePaused=true;pauseStart=Date.now();
     if(metroOn)mStop();
   }
+  savePending();
   renderPractice();
 }
 
@@ -1720,6 +1868,11 @@ function stopPractice(abort){
   }
   var lastPid=practicePieceId;
   practicing=false;practicePieceId=null;rounds=[];pendingEntry=null;practiceStart=null;
+  clearPending();
+  if(planActive){
+    if(planEndAfter){exitPlan();return;}
+    startPlanPiece(planIndex+1);return;
+  }
   if(lastPid)showDetail(lastPid);else nav('home');
 }
 
@@ -1765,8 +1918,21 @@ function showRatingScreen(){
     '<div style="font-size:14px;color:var(--muted);margin-top:8px;font-style:italic">Wie war es?</div>'+
   '</div>'+
   '<div class="card">'+ratingsHtml+'</div>'+
-  '<button class="btn btn-go" onclick="saveEntry()">Speichern</button>'+
-  '<button class="btn btn-soft mt8" onclick="saveEntry(true)">Überspringen</button>';
+  (planActive?
+    (function(){
+      if(planEndAfter){
+        return '<button class="btn btn-go" onclick="saveEntry()">Speichern & Plan beenden</button>'+
+          '<button class="btn btn-xs btn-soft mt8" style="color:var(--muted)" onclick="saveEntry(true)">Ohne Bewertung beenden</button>';
+      }
+      var hasNext=planItems&&planIndex+1<planItems.length;
+      return '<button class="btn btn-go" onclick="saveEntry()">'+(hasNext?'Speichern → Nächstes':'Speichern → Plan fertig')+'</button>'+
+        '<button class="btn btn-soft mt8" onclick="saveEntryEndPlan()">Speichern → Plan beenden</button>'+
+        '<button class="btn btn-xs btn-soft mt8" style="color:var(--muted)" onclick="saveEntry(true)">Überspringen</button>';
+    })()
+  :
+    '<button class="btn btn-go" onclick="saveEntry()">Speichern</button>'+
+    '<button class="btn btn-soft mt8" onclick="saveEntry(true)">Überspringen</button>'
+  );
 }
 
 function setEntryRating(key,val){
@@ -1811,8 +1977,14 @@ function saveEntry(skip){
     save();
     localStorage.removeItem("uz-pending");
   }
-  // Navigate: if plan active, go to next piece
+  // Navigate: if plan active, advance or end depending on intent
   if(planActive){
+    if(planEndAfter){
+      endPlanRunner();
+      var lp=pName?pieces.find(function(x){return x.name===pName;}):null;
+      if(lp)showDetail(lp.id);else nav('home');
+      return;
+    }
     startPlanPiece(planIndex+1);
     return;
   }
@@ -1820,10 +1992,17 @@ function saveEntry(skip){
   if(lastPiece)showDetail(lastPiece.id);else nav('home');
 }
 
+function saveEntryEndPlan(){
+  planEndAfter=true;
+  saveEntry();
+}
+
 function cancelRating(){
   // Go back without saving - discard the entry
   var pName=pendingEntry?pendingEntry.pieceName:null;
   pendingEntry=null;
+  if(planActive){resumePlanPiece();return;}
+  clearPending();
   var lastPiece=pName?pieces.find(function(x){return x.name===pName;}):null;
   if(lastPiece)showDetail(lastPiece.id);else nav('home');
 }
@@ -1939,20 +2118,24 @@ function renderPrimeTime(){
       (!isRunning?'<button class="btn" onclick="startPrimeTimeTimer()" style="flex:1;font-size:16px;background:var(--accent);color:#fff">▶ Start</button>':
       '<button class="btn '+(practicePaused?'btn-go':'btn-soft')+'" onclick="togglePause();renderPrimeTime()" style="flex:1">'+(practicePaused?'▶ Weiter':'⏸ Pause')+'</button>')+
       '<button class="btn btn-stop" onclick="stopPrimeTime(false)" style="flex:1">⏹ Stop</button>'+
-    '</div>';
+    '</div>'+
+    (planActive?
+      '<div class="card" style="margin-top:8px;padding:10px;border-left:3px solid var(--accent2)">'+
+        '<div style="font-size:11px;color:var(--muted);text-align:center;margin-bottom:8px">🤖 KI-Übeplan · Schritt '+(planIndex+1)+'/'+(planItems?planItems.length:'?')+'</div>'+
+        '<div class="row" style="gap:8px">'+
+          '<button class="btn btn-xs btn-soft" onclick="showPlanEditor()" style="flex:1;color:var(--accent2)">✎ Plan bearbeiten</button>'+
+          '<button class="btn btn-xs btn-soft" onclick="stopAndEndPlan()" style="flex:1;color:var(--accent)">⏹ Plan beenden</button>'+
+        '</div>'+
+      '</div>'
+    :'');
 }
 
 function startPrimeTimeTimer(){
   if(practiceStart)return;
   practiceStart=Date.now();
-  practiceTimer=setInterval(function(){
-    if(!practicePaused){
-      practiceElapsed=Math.round((Date.now()-practiceStart-totalPausedMs)/1000);
-      sessionTotalElapsed++;
-      var el=document.getElementById("p-timer");
-      if(el)el.textContent=fmt(practiceElapsed);
-    }
-  },1000);
+  clearInterval(practiceTimer);
+  practiceTimer=setInterval(practiceTick,1000);
+  savePending();
   renderPrimeTime();
 }
 
@@ -1963,7 +2146,7 @@ function stopPrimeTime(abort){
     var el=document.getElementById("v-practice");
     var mins=Math.round(practiceElapsed/60);
     el.innerHTML=
-      '<button class="btn btn-xs btn-soft mb8" onclick="practicing=false;practiceStart=null;nav(\'home\')" style="width:auto">← Zurück</button>'+
+      '<button class="btn btn-xs btn-soft mb8" onclick="cancelPrimeTimeNote()" style="width:auto">← Zurück</button>'+
       '<div style="text-align:center;padding:16px 0">'+
         '<div style="font-size:32px;margin-bottom:4px">✨</div>'+
         '<div style="font-family:\'DM Serif Display\',serif;font-size:20px">Prime Time</div>'+
@@ -1976,6 +2159,19 @@ function stopPrimeTime(abort){
     return;
   }
   practicing=false;practiceStart=null;
+  if(planActive){
+    if(planEndAfter){exitPlan();return;}
+    if(abort){resumePlanPiece();return;}
+    startPlanPiece(planIndex+1);return;
+  }
+  clearPending();
+  nav('home');
+}
+
+function cancelPrimeTimeNote(){
+  practicing=false;practiceStart=null;
+  if(planActive){resumePlanPiece();return;}
+  clearPending();
   nav('home');
 }
 
@@ -1998,6 +2194,11 @@ function savePrimeTime(skip){
   });
   save();
   practicing=false;practiceStart=null;
+  if(planActive){
+    if(planEndAfter){endPlanRunner();clearPending();nav('home');return;}
+    startPlanPiece(planIndex+1);return;
+  }
+  clearPending();
   nav('home');
 }
 
@@ -2110,7 +2311,9 @@ function renderLesson(){
     '<input type="number" id="plan-minutes" value="'+(settings.sessionMin||45)+'" placeholder="Min" style="width:70px;font-size:14px;padding:8px;text-align:center">'+
     '<button class="btn btn-go btn-sm" onclick="generateUebeplan()" id="plan-btn" style="flex:1">🤖 Übeplan erstellen</button>'+
     (cached?'<button class="btn btn-xs btn-soft" onclick="clearUebeplan()" style="width:auto;min-width:32px">×</button>':'')+
-  '</div><div id="plan-result"></div></div>';
+  '</div><div id="plan-result"></div>'+
+  '<button class="btn btn-soft btn-sm mt8" onclick="showPlanBuilder()" style="width:100%;color:var(--accent2)">✏️ Eigenen Plan zusammenstellen</button>'+
+  '</div>';
   
   // Questions
   var qHtml='<div class="card"><div class="stitle">Fragen an den Lehrer</div>';
@@ -2594,6 +2797,115 @@ var planItems=null;
 var planIndex=0;
 var planPieceCountdown=0; // seconds remaining for current plan piece
 var planWarningShown=false;
+var planEndAfter=false; // set when user wants to end the plan after the current rating
+
+function endPlanRunner(){
+  planActive=false;planItems=null;planIndex=0;planPieceCountdown=0;planWarningShown=false;planEndAfter=false;
+}
+
+// Write changes to a running plan back to the cache so they survive
+function persistPlanItems(){
+  if(!planItems)return;
+  var cached=null;try{cached=JSON.parse(localStorage.getItem('uz-uebeplan'));}catch(e){}
+  if(!cached)cached={date:new Date().toISOString(),text:'',plan:[]};
+  cached.plan=planItems;
+  try{localStorage.setItem('uz-uebeplan',JSON.stringify(cached));}catch(e){}
+}
+
+// Full, clean exit from a running plan (discards any in-progress, unsaved piece)
+function exitPlan(){
+  clearInterval(practiceTimer);if(metroOn)mStop();
+  endPlanRunner();
+  practicing=false;practiceStart=null;practicePieceId=null;rounds=[];pendingEntry=null;
+  try{localStorage.removeItem("uz-pending");}catch(e){}
+  nav('home');
+}
+
+// Re-enter the current plan item (used when going back from rating)
+function resumePlanPiece(){
+  planEndAfter=false;
+  if(!planActive||!planItems||planIndex>=planItems.length){exitPlan();return;}
+  startPlanPiece(planIndex);
+}
+
+// Stop the current piece, go to rating, but end the plan after saving
+function stopAndEndPlan(){
+  planEndAfter=true;
+  if(practiceMode==='primetime'){stopPrimeTime(false);return;}
+  stopPractice(false);
+}
+
+// === PLAN EDITOR (running plan) ===
+function showPlanEditor(){
+  if(!planItems)return;
+  var el=document.getElementById('plan-editor-overlay');
+  if(!el){el=document.createElement('div');el.id='plan-editor-overlay';document.body.appendChild(el);}
+  el.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:300;display:flex;align-items:flex-end;justify-content:center';
+  var rows='';
+  planItems.forEach(function(item,i){
+    var isCur=i===planIndex;
+    rows+='<div style="display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--border)'+(isCur?';background:var(--surface2);border-radius:8px;padding-left:8px;padding-right:8px':'')+'">'+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(isCur?'▶ ':'')+esc(item.piece||'Aufwärmen')+(item.section?' · '+esc(item.section):'')+'</div>'+
+        '<div style="display:flex;align-items:center;gap:6px;margin-top:4px">'+
+          '<input type="number" min="1" max="120" value="'+(item.minutes||10)+'" onchange="planSetMinutes('+i+',this.value)" style="width:56px;font-size:14px;padding:6px;text-align:center">'+
+          '<span style="font-size:12px;color:var(--muted)">Min</span>'+
+          (item.bpm?'<span style="font-size:11px;color:var(--muted)">· '+item.bpm+' BPM</span>':'')+
+        '</div>'+
+      '</div>'+
+      '<div style="display:flex;flex-direction:column;gap:2px">'+
+        '<button class="rm-btn" onclick="planMoveItem('+i+',-1)" '+(i===0?'disabled style="opacity:.3"':'')+'>▲</button>'+
+        '<button class="rm-btn" onclick="planMoveItem('+i+',1)" '+(i===planItems.length-1?'disabled style="opacity:.3"':'')+'>▼</button>'+
+      '</div>'+
+      (isCur?'':'<button class="rm-btn" onclick="planJumpTo('+i+')" title="Hierhin springen">▶</button>')+
+      '<button class="rm-btn" onclick="planRemoveItem('+i+')">×</button>'+
+    '</div>';
+  });
+  var pickOpts='<option value="">+ Stück hinzufügen…</option>'+pieces.filter(function(p){return p.status!=='ruhend';}).map(function(p){return '<option value="'+p.id+'">'+esc(p.name)+'</option>';}).join('');
+  el.innerHTML='<div style="background:var(--bg);width:100%;max-width:480px;border-radius:16px 16px 0 0;padding:16px;max-height:85vh;overflow:auto;box-shadow:0 -4px 20px rgba(0,0,0,.15)">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div class="stitle" style="margin:0">📋 Plan bearbeiten</div><button class="btn btn-xs btn-soft" onclick="closePlanEditor()" style="width:auto">Fertig</button></div>'+
+    '<div style="font-size:11px;color:var(--muted);margin-bottom:8px">Zeiten und Reihenfolge anpassen, Stücke entfernen oder hinzufügen. Änderungen gelten sofort.</div>'+
+    rows+
+    '<select onchange="if(this.value){planAddPiece(parseInt(this.value));this.value=\'\';}" style="width:100%;margin-top:12px;font-size:14px;padding:10px">'+pickOpts+'</select>'+
+  '</div>';
+}
+function closePlanEditor(){var el=document.getElementById('plan-editor-overlay');if(el)el.remove();}
+function planSetMinutes(idx,v){
+  if(!planItems||!planItems[idx])return;
+  var m=Math.max(1,Math.min(120,parseInt(v)||10));
+  planItems[idx].minutes=m;
+  if(idx===planIndex){planPieceCountdown=m*60;planWarningShown=false;updatePracticeTimer();}
+  persistPlanItems();
+}
+function planMoveItem(idx,dir){
+  if(!planItems)return;
+  var ni=idx+dir;if(ni<0||ni>=planItems.length)return;
+  var tmp=planItems[idx];planItems[idx]=planItems[ni];planItems[ni]=tmp;
+  if(planIndex===idx)planIndex=ni;else if(planIndex===ni)planIndex=idx;
+  persistPlanItems();showPlanEditor();
+}
+function planRemoveItem(idx){
+  if(!planItems)return;
+  var wasCurrent=(idx===planIndex);
+  planItems.splice(idx,1);
+  if(!planItems.length){closePlanEditor();persistPlanItems();exitPlan();return;}
+  if(idx<planIndex)planIndex--;
+  else if(wasCurrent&&planIndex>=planItems.length)planIndex=planItems.length-1;
+  persistPlanItems();
+  if(wasCurrent){closePlanEditor();startPlanPiece(planIndex);return;}
+  showPlanEditor();
+}
+function planJumpTo(idx){
+  if(!planItems||!planItems[idx])return;
+  closePlanEditor();
+  startPlanPiece(idx);
+}
+function planAddPiece(pid){
+  var p=pieces.find(function(x){return x.id===pid;});if(!p||!planItems)return;
+  var sec=(p.sections||[])[0];
+  planItems.push({piece:p.name,pieceId:p.id,section:sec?sec.name:null,sectionIdx:0,minutes:10,bpm:sec?sec.targetBpm:0,comment:''});
+  persistPlanItems();showPlanEditor();
+}
 
 function startPlanRunner(){
   var cached=null;
@@ -2603,19 +2915,23 @@ function startPlanRunner(){
   planItems=cached.plan;
   planIndex=0;
   planActive=true;
+  planEndAfter=false;
   startPlanPiece(0);
 }
 
 function startPlanPiece(idx){
+  // Always clear any leftover timer/break so jumps and resyncs start clean
+  clearInterval(practiceTimer);if(metroOn)mStop();
+  if(pomoBreakTimer){clearInterval(pomoBreakTimer);pomoBreakTimer=null;pomoBreakActive=false;}
   if(!planItems||idx>=planItems.length){
     // Plan complete
-    planActive=false;
-    planItems=null;
+    endPlanRunner();
     nav('home');
     return;
   }
   planIndex=idx;
   planWarningShown=false;
+  planEndAfter=false;
   var item=planItems[idx];
   planPieceCountdown=(item.minutes||10)*60;
   
@@ -2693,7 +3009,7 @@ function showPlanItemDone(){
     '<div style="display:flex;flex-direction:column;gap:8px">'+
       '<button class="btn btn-soft" onclick="extendPlanItem(5)">+5 Min verlängern</button>'+
       '<button class="btn btn-go" onclick="stopPractice(false)">'+(nextItem?'Weiter → '+esc(nextItem.piece):'Bewertung')+'</button>'+
-      '<button class="btn btn-xs btn-soft" onclick="planActive=false;planItems=null;stopPractice(false)" style="color:var(--muted)">⏹ Plan beenden</button>'+
+      '<button class="btn btn-xs btn-soft" onclick="stopAndEndPlan()" style="color:var(--muted)">⏹ Plan beenden</button>'+
     '</div>'+
   '</div>';
 }
@@ -2723,6 +3039,79 @@ function clearUebeplan(){
   try{localStorage.removeItem('uz-uebeplan');}catch(e){}
   renderLesson();
   renderHome();
+}
+
+// === MANUAL PLAN BUILDER ===
+var pbItems=[]; // [{pid, secIdx, minutes}]
+function pbFind(pid,secIdx){
+  for(var i=0;i<pbItems.length;i++){if(pbItems[i].pid===pid&&pbItems[i].secIdx===secIdx)return i;}
+  return -1;
+}
+function showPlanBuilder(){
+  var el=document.getElementById('plan-builder-overlay');
+  if(!el){el=document.createElement('div');el.id='plan-builder-overlay';document.body.appendChild(el);}
+  el.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:300;display:flex;align-items:flex-end;justify-content:center';
+  var active=pieces.filter(function(p){return p.status!=='ruhend';});
+  var body='';
+  active.forEach(function(p){
+    var secs=p.sections||[];
+    if(!secs.length)return;
+    body+='<div style="margin-top:10px"><div style="font-size:13px;font-weight:700;margin-bottom:4px">'+esc(p.name)+'</div>'+
+      '<div style="display:flex;flex-wrap:wrap;gap:6px">';
+    secs.forEach(function(s,si){
+      var on=pbFind(p.id,si)>=0;
+      body+='<button class="btn btn-xs '+(on?'btn-go':'btn-soft')+'" onclick="pbToggle('+p.id+','+si+')" style="width:auto">'+esc(s.name)+'</button>';
+    });
+    body+='</div></div>';
+  });
+  // Selected list with minutes
+  var selHtml='';
+  var total=0;
+  pbItems.forEach(function(it,idx){
+    var p=pieces.find(function(x){return x.id===it.pid;});if(!p)return;
+    var sec=(p.sections||[])[it.secIdx];
+    total+=it.minutes||0;
+    selHtml+='<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">'+
+      '<div style="flex:1;min-width:0;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(p.name)+' · '+esc(sec?sec.name:'?')+'</div>'+
+      '<input type="number" min="1" max="120" value="'+(it.minutes||10)+'" onchange="pbSetMin('+idx+',this.value)" style="width:56px;font-size:14px;padding:6px;text-align:center">'+
+      '<span style="font-size:11px;color:var(--muted)">Min</span>'+
+      '<button class="rm-btn" onclick="pbRemove('+idx+')">×</button>'+
+    '</div>';
+  });
+  var hasSel=pbItems.length>0;
+  el.innerHTML='<div style="background:var(--bg);width:100%;max-width:480px;border-radius:16px 16px 0 0;padding:16px;max-height:88vh;overflow:auto;box-shadow:0 -4px 20px rgba(0,0,0,.15)">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div class="stitle" style="margin:0">✏️ Eigenen Plan zusammenstellen</div><button class="btn btn-xs btn-soft" onclick="pbClose()" style="width:auto">Abbrechen</button></div>'+
+    '<div style="font-size:11px;color:var(--muted);margin-bottom:4px">Abschnitte antippen zum Hinzufügen. Reihenfolge = Auswahl-Reihenfolge.</div>'+
+    (hasSel?'<div class="card" style="padding:10px;margin-top:6px"><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Ausgewählt · '+total+' Min</div>'+selHtml+'</div>':'')+
+    '<div style="max-height:38vh;overflow:auto;margin-top:6px">'+(body||'<div style="font-size:12px;color:var(--muted);padding:10px">Keine Stücke.</div>')+'</div>'+
+    '<button class="btn btn-go mt12" onclick="pbSave(true)" '+(hasSel?'':'disabled style="opacity:.4"')+'>▶ Speichern & starten</button>'+
+    '<button class="btn btn-soft mt8" onclick="pbSave(false)" '+(hasSel?'':'disabled style="opacity:.4"')+'>Nur speichern</button>'+
+  '</div>';
+}
+function pbToggle(pid,secIdx){
+  var i=pbFind(pid,secIdx);
+  if(i>=0)pbItems.splice(i,1);
+  else pbItems.push({pid:pid,secIdx:secIdx,minutes:10});
+  showPlanBuilder();
+}
+function pbSetMin(idx,v){
+  if(!pbItems[idx])return;
+  pbItems[idx].minutes=Math.max(1,Math.min(120,parseInt(v)||10));
+}
+function pbRemove(idx){pbItems.splice(idx,1);showPlanBuilder();}
+function pbClose(){var el=document.getElementById('plan-builder-overlay');if(el)el.remove();pbItems=[];}
+function pbSave(start){
+  if(!pbItems.length)return;
+  var plan=pbItems.map(function(it){
+    var p=pieces.find(function(x){return x.id===it.pid;});
+    var sec=p?(p.sections||[])[it.secIdx]:null;
+    return {pieceId:p?p.id:0,piece:p?p.name:'',sectionIdx:it.secIdx,section:sec?sec.name:null,minutes:it.minutes||10,bpm:sec?(sec.targetBpm||0):0,comment:''};
+  });
+  try{localStorage.setItem('uz-uebeplan',JSON.stringify({date:new Date().toISOString(),plan:plan,text:null}));}catch(e){}
+  var el=document.getElementById('plan-builder-overlay');if(el)el.remove();
+  pbItems=[];
+  if(start){startPlanRunner();}
+  else{renderLesson();renderHome();}
 }
 function renderStats(){
   var el=document.getElementById("v-stats");
@@ -3099,6 +3488,7 @@ function renderSettings(){
     '<div class="card">'+
       '<div style="font-size:13px;font-weight:600;margin-bottom:8px">Daten</div>'+
       '<button class="btn btn-soft mb8" onclick="exportData()">📥 Daten exportieren (JSON)</button>'+
+      '<div style="font-size:11px;color:var(--muted);margin-bottom:8px">🔒 Dein API-Key ist aus Sicherheitsgründen nicht im Backup enthalten.</div>'+
       '<button class="btn btn-soft mb8" onclick="document.getElementById(\'import-file\').click()">📤 Daten importieren</button>'+
       '<input type="file" id="import-file" accept=".json" style="display:none" onchange="importData(event)">'+
       '<div id="import-result"></div>'+
@@ -3107,7 +3497,7 @@ function renderSettings(){
     '<button class="btn btn-soft mt12" onclick="nav(\'home\')">← Zurück</button>'+
     '<div style="text-align:center;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">'+
       '<div style="font-size:13px;color:var(--text);font-weight:500">🎸 Übezeit v3.0</div>'+
-      '<div style="font-size:11px;color:var(--muted)">Build 2026-04-19-E</div>'+
+      '<div style="font-size:11px;color:var(--muted)">Build 2026-05-31-C</div>'+
     '</div>';
 }
 
@@ -3138,9 +3528,12 @@ function moveCat(ci,dir){
 }
 
 function exportData(){
+  // API-Key bewusst NICHT exportieren (Sicherheit – Backup könnte geteilt werden)
+  var settingsCopy={};
+  for(var k in settings){if(k!=='apiKey')settingsCopy[k]=settings[k];}
   var data={
     pieces:pieces,sessions:sessions,tempoHist:tempoHist,
-    settings:settings,cats:CATS,rewards:rewards,lesson:lesson,
+    settings:settingsCopy,cats:CATS,rewards:rewards,lesson:lesson,
     analysisCache:analysisCache,
     lessonArchive:JSON.parse(localStorage.getItem('uz-lesson-archive')||'[]'),
     version:'v3.0',exportDate:new Date().toISOString()
@@ -3256,6 +3649,7 @@ function getMonday(d){var dt=new Date(d||new Date());var day=dt.getDay();var dif
 
 // === INIT ===
 try{
+  pendingRecovery=loadPending();
   renderHome();
 }catch(e){
   document.getElementById('v-home').innerHTML='<div class="card" style="text-align:center;padding:20px"><div style="font-size:28px;margin-bottom:8px">⚠️</div><div style="font-size:14px;color:red;margin-bottom:12px">Fehler: '+e.message+'</div><button class="btn btn-stop" onclick="localStorage.clear();location.reload()">Daten zurücksetzen & neu laden</button></div>';
