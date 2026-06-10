@@ -2737,7 +2737,7 @@ function renderUebeplanCards(){
     });
     
     var doneCount=0;
-    cached.plan.forEach(function(item){
+    cached.plan.forEach(function(item,itemIdx){
       var p=null;
       if(item.pieceId)p=pieces.find(function(x){return x.id===item.pieceId;});
       if(!p&&item.piece)p=pieces.find(function(x){return x.name===item.piece;});
@@ -2770,7 +2770,7 @@ function renderUebeplanCards(){
             '</div>'+
             (item.comment?'<div style="font-size:11px;color:var(--accent);margin-top:2px;font-style:italic">'+esc(item.comment)+'</div>':'')+
           '</div>'+
-          (canStart?'<button class="btn btn-xs btn-go" onclick="startFromPlan('+p.id+','+secIdx+')" style="width:auto;min-width:40px">▶</button>':'')+
+          (canStart?'<button class="btn btn-xs btn-go" onclick="startFromPlan('+itemIdx+')" style="width:auto;min-width:40px">▶</button>':'')+
         '</div>';
       }
     });
@@ -2907,16 +2907,28 @@ function planAddPiece(pid){
   persistPlanItems();showPlanEditor();
 }
 
+function planFirstUndoneIndex(plan){
+  var todayStart=new Date();todayStart.setHours(0,0,0,0);
+  var done={};
+  sessions.filter(function(s){return new Date(s.date)>=todayStart;}).forEach(function(s){
+    (s.pieces||[]).forEach(function(sp){done[sp.name+(sp.section?'::'+sp.section:'')]=true;});
+  });
+  for(var i=0;i<plan.length;i++){
+    var it=plan[i];
+    if(!done[(it.piece||'')+(it.section?'::'+it.section:'')])return i;
+  }
+  return 0; // all done already -> start from the top
+}
+
 function startPlanRunner(){
   var cached=null;
   try{cached=JSON.parse(localStorage.getItem('uz-uebeplan'));}catch(e){}
   if(!cached||!cached.plan||!cached.plan.length)return;
   
   planItems=cached.plan;
-  planIndex=0;
   planActive=true;
   planEndAfter=false;
-  startPlanPiece(0);
+  startPlanPiece(planFirstUndoneIndex(cached.plan));
 }
 
 function startPlanPiece(idx){
@@ -3068,8 +3080,15 @@ function showPlanWarning(){
   setTimeout(function(){var w=document.getElementById('plan-warning');if(w)w.remove();},4000);
 }
 
-function startFromPlan(pid,secIdx){
-  startPracticeFromDetail(pid,secIdx);
+function startFromPlan(idx){
+  var cached=null;
+  try{cached=JSON.parse(localStorage.getItem('uz-uebeplan'));}catch(e){}
+  if(!cached||!cached.plan||!cached.plan.length)return;
+  if(idx<0||idx>=cached.plan.length)idx=0;
+  planItems=cached.plan;
+  planActive=true;
+  planEndAfter=false;
+  startPlanPiece(idx);
 }
 
 function clearUebeplan(){
@@ -3534,7 +3553,7 @@ function renderSettings(){
     '<button class="btn btn-soft mt12" onclick="nav(\'home\')">← Zurück</button>'+
     '<div style="text-align:center;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">'+
       '<div style="font-size:13px;color:var(--text);font-weight:500">🎸 Übezeit v3.0</div>'+
-      '<div style="font-size:11px;color:var(--muted)">Build 2026-05-31-D</div>'+
+      '<div style="font-size:11px;color:var(--muted)">Build 2026-05-31-E</div>'+
     '</div>';
 }
 
