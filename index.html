@@ -3009,9 +3009,46 @@ function showPlanItemDone(){
     '<div style="display:flex;flex-direction:column;gap:8px">'+
       '<button class="btn btn-soft" onclick="extendPlanItem(5)">+5 Min verlängern</button>'+
       '<button class="btn btn-go" onclick="stopPractice(false)">'+(nextItem?'Weiter → '+esc(nextItem.piece):'Bewertung')+'</button>'+
+      '<button class="btn btn-soft" onclick="showPlanInsert()" style="color:var(--accent2)">➕ Stück einfügen</button>'+
       '<button class="btn btn-xs btn-soft" onclick="stopAndEndPlan()" style="color:var(--muted)">⏹ Plan beenden</button>'+
     '</div>'+
   '</div>';
+}
+
+function showPlanInsert(){
+  var el=document.getElementById("v-practice");
+  var active=pieces.filter(function(p){return p.status!=='ruhend';});
+  var list=active.map(function(p){
+    return '<button class="btn btn-soft mb8" onclick="planInsertPickSection('+p.id+')" style="text-align:left">'+esc(p.name)+'</button>';
+  }).join('');
+  el.innerHTML='<div style="padding:16px">'+
+    '<button class="btn btn-xs btn-soft mb12" onclick="showPlanItemDone()" style="width:auto">← Zurück</button>'+
+    '<div class="stitle">➕ Stück einfügen</div>'+
+    '<div style="font-size:11px;color:var(--muted);margin-bottom:10px">Wird direkt nach dem aktuellen Schritt eingefügt und als Nächstes geübt.</div>'+
+    (list||'<div style="font-size:12px;color:var(--muted)">Keine Stücke.</div>')+
+  '</div>';
+}
+function planInsertPickSection(pid){
+  var p=pieces.find(function(x){return x.id===pid;});if(!p)return;
+  var el=document.getElementById("v-practice");
+  var secs=p.sections||[];
+  var list=secs.map(function(s,si){
+    return '<button class="btn btn-soft mb8" onclick="planInsertDo('+pid+','+si+')" style="text-align:left">'+esc(s.name)+(s.targetBpm?' · Ziel '+s.targetBpm:'')+'</button>';
+  }).join('');
+  el.innerHTML='<div style="padding:16px">'+
+    '<button class="btn btn-xs btn-soft mb12" onclick="showPlanInsert()" style="width:auto">← Zurück</button>'+
+    '<div class="stitle">'+esc(p.name)+'</div>'+
+    '<div style="font-size:11px;color:var(--muted);margin-bottom:10px">Welchen Abschnitt einfügen?</div>'+
+    (list||'<div style="font-size:12px;color:var(--muted)">Keine Abschnitte.</div>')+
+  '</div>';
+}
+function planInsertDo(pid,secIdx){
+  var p=pieces.find(function(x){return x.id===pid;});if(!p||!planItems)return;
+  var sec=(p.sections||[])[secIdx];
+  planItems.splice(planIndex+1,0,{piece:p.name,pieceId:p.id,section:sec?sec.name:null,sectionIdx:secIdx,minutes:10,bpm:sec?(sec.targetBpm||0):0,comment:''});
+  persistPlanItems();
+  // Save & rate the current item, then continue to the inserted one
+  stopPractice(false);
 }
 
 function extendPlanItem(mins){
@@ -3497,7 +3534,7 @@ function renderSettings(){
     '<button class="btn btn-soft mt12" onclick="nav(\'home\')">← Zurück</button>'+
     '<div style="text-align:center;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">'+
       '<div style="font-size:13px;color:var(--text);font-weight:500">🎸 Übezeit v3.0</div>'+
-      '<div style="font-size:11px;color:var(--muted)">Build 2026-05-31-C</div>'+
+      '<div style="font-size:11px;color:var(--muted)">Build 2026-05-31-D</div>'+
     '</div>';
 }
 
