@@ -492,7 +492,7 @@ function secKey(pName,sName){return pName+'::'+sName;}
 function getLast(n){var h=tempoHist[n]||[];return h.length?h[h.length-1].bpm:0;}
 function getHist(n){return tempoHist[n]||[];}
 function getSecLast(pName,sName){return getLast(secKey(pName,sName));}
-function getSecHist(pName,sName){var h=getHist(secKey(pName,sName));return h.length?h:getHist(pName);}
+function getSecHist(pName,sName){return getHist(secKey(pName,sName));}
 
 // === STREAK ===
 function calcStreak(){
@@ -3713,7 +3713,7 @@ function renderSettings(){
     '<button class="btn btn-soft mt12" onclick="nav(\'home\')">← Zurück</button>'+
     '<div style="text-align:center;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">'+
       '<div style="font-size:13px;color:var(--text);font-weight:500">🎸 Übezeit v3.0</div>'+
-      '<div style="font-size:11px;color:var(--muted)">Build 2026-06-23-D</div>'+
+      '<div style="font-size:11px;color:var(--muted)">Build 2026-06-23-E</div>'+
     '</div>';
 }
 
