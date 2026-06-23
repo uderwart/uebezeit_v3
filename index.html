@@ -911,11 +911,20 @@ function buildCombinedTempoChart(p){
   var lineColors=['#2a9d8f','#c76a4a','#a4546e','#b07d3a','#6b8193','#7c9070'];
   var hasData=false;
   var allData=[];
+  // Sections actually practiced (appear in a real session) — used to drop inherited-only seeds
+  var practiced={};
+  sessions.forEach(function(s){(s.pieces||[]).forEach(function(sp){if(sp.name===p.name&&sp.section)practiced[sp.section]=true;});});
   
-  secs.forEach(function(s,si){
+  var ci=0;
+  secs.forEach(function(s){
     var hist=getSecHist(p.name,s.name);
-    if(hist.length>=1){hasData=true;}
-    allData.push({name:s.name,target:s.targetBpm,hist:hist.slice(-20),color:lineColors[si%lineColors.length]});
+    if(!hist.length)return;
+    // Show only if there is real progression (a line) or the section was genuinely practiced.
+    // A single inherited starting value (carry-over from splitting) is not shown on its own.
+    if(hist.length<2 && !practiced[s.name])return;
+    hasData=true;
+    allData.push({name:s.name,target:s.targetBpm,hist:hist.slice(-20),color:lineColors[ci%lineColors.length]});
+    ci++;
   });
   if(!hasData)return '';
   
@@ -950,10 +959,10 @@ function buildCombinedTempoChart(p){
   allData.forEach(function(d){
     if(!d.hist.length)return;
     if(d.hist.length===1){
-      var sx=w/2;
+      var sx=w-pad;
       var sy=pad+(1-(d.hist[0].bpm-globalMin)/range)*(h-pad*2);
       svg+='<circle cx="'+sx+'" cy="'+sy+'" r="3.5" fill="'+d.color+'"/>';
-      svg+='<text x="'+sx+'" y="'+(sy-6)+'" font-size="9" fill="'+d.color+'" text-anchor="middle" font-weight="600" font-family="DM Sans">'+d.hist[0].bpm+'</text>';
+      svg+='<text x="'+sx+'" y="'+(sy-6)+'" font-size="9" fill="'+d.color+'" text-anchor="end" font-weight="600" font-family="DM Sans">'+d.hist[0].bpm+'</text>';
       return;
     }
     var stepX=(w-pad*2)/(d.hist.length-1);
@@ -3714,7 +3723,7 @@ function renderSettings(){
     '<button class="btn btn-soft mt12" onclick="nav(\'home\')">← Zurück</button>'+
     '<div style="text-align:center;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">'+
       '<div style="font-size:13px;color:var(--text);font-weight:500">🎸 Übezeit v3.0</div>'+
-      '<div style="font-size:11px;color:var(--muted)">Build 2026-06-23-F</div>'+
+      '<div style="font-size:11px;color:var(--muted)">Build 2026-06-23-G</div>'+
     '</div>';
 }
 
