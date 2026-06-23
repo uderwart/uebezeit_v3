@@ -914,9 +914,9 @@ function renderDetail(id){
 // === COMBINED TEMPO CHART ===
 function buildOverallTempoChart(p){
   // Overall = the slowest section over time (how fast the whole piece can be played).
-  var secNames=(p.sections||[]).filter(function(s){return getSecHist(p.name,s.name).length;}).map(function(s){return s.name;});
+  var secNames=(p.sections||[]).filter(function(s){return getSecHist(p.name,s.name).length>=2;}).map(function(s){return s.name;});
   if(!secNames.length)return '';
-  var hist=mergeTempoHistories(p.name,secNames).slice(-40);
+  var hist=mergeTempoHistories(p.name,secNames).slice(-60);
   if(!hist.length)return '';
   var target=(p.sections||[]).reduce(function(a,s){return Math.max(a,s.targetBpm||0);},0);
   var w=320,h=140,pad=25;
@@ -1549,6 +1549,41 @@ function parseBarRange(name,total){
   m=s.match(/(?:t\.?\s*|takt\s*)?(\d+)\s*$/);
   if(m)return {start:parseInt(m[1]),end:parseInt(m[1])};
   return null;
+}
+
+// One-time repair: fill split bars (which only got an inherited single value) with the
+// full progression curve of the matching old block, so charts show real history again.
+function repairSplitHistories(){
+  var changed=false;
+  var practiced={};
+  sessions.forEach(function(s){(s.pieces||[]).forEach(function(sp){if(sp.section)practiced[sp.name+'::'+sp.section]=true;});});
+  pieces.forEach(function(p){
+    var maxBar=0;
+    (p.sections||[]).forEach(function(s){var r=parseBarRange(s.name,0);if(r&&r.end)maxBar=Math.max(maxBar,r.end);});
+    var prefix=p.name+'::';
+    var curNames={};(p.sections||[]).forEach(function(s){curNames[s.name]=true;});
+    var sources=[];
+    Object.keys(tempoHist).forEach(function(k){
+      if(k.indexOf(prefix)!==0)return;
+      var nm=k.slice(prefix.length);
+      if(curNames[nm])return;
+      var r=parseBarRange(nm,maxBar||9999);var h=tempoHist[k];
+      if(r&&h&&h.length>=2)sources.push({start:r.start,end:r.end,hist:h});
+    });
+    if(!sources.length)return;
+    (p.sections||[]).forEach(function(s){
+      if(!s.auto)return;
+      var key=secKey(p.name,s.name);
+      var h=tempoHist[key]||[];
+      if(h.length>=2)return;
+      if(practiced[p.name+'::'+s.name])return;
+      var r=parseBarRange(s.name,maxBar||9999);if(!r)return;
+      var best=null;
+      sources.forEach(function(src){if(r.start<=src.end&&r.end>=src.start){if(!best||src.hist.length>best.hist.length)best=src;}});
+      if(best){tempoHist[key]=best.hist.map(function(e){return {date:e.date,bpm:e.bpm,transferred:true};});changed=true;}
+    });
+  });
+  if(changed)save();
 }
 
 function autoSplitSections(pid){
@@ -3780,7 +3815,7 @@ function renderSettings(){
     '<button class="btn btn-soft mt12" onclick="nav(\'home\')">← Zurück</button>'+
     '<div style="text-align:center;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">'+
       '<div style="font-size:13px;color:var(--text);font-weight:500">🎸 Übezeit v3.0</div>'+
-      '<div style="font-size:11px;color:var(--muted)">Build 2026-06-23-H</div>'+
+      '<div style="font-size:11px;color:var(--muted)">Build 2026-06-23-J</div>'+
     '</div>';
 }
 
@@ -3932,6 +3967,7 @@ function getMonday(d){var dt=new Date(d||new Date());var day=dt.getDay();var dif
 
 // === INIT ===
 try{
+  repairSplitHistories();
   pendingRecovery=loadPending();
   renderHome();
 }catch(e){
