@@ -859,10 +859,16 @@ function renderDetail(id){
   // Links
   var linksHtml=renderPieceLinks(p);
   
-  // Tempo charts per section
-  // Combined tempo chart for all sections
+  // Tempo charts: overall piece curve (headline) + per-section detail
+  var overallHtml=buildOverallTempoChart(p);
   var chartsHtml=buildCombinedTempoChart(p);
-  if(chartsHtml)chartsHtml='<div class="stitle mt12">Tempo-Verlauf</div>'+chartsHtml;
+  var tempoBlock='';
+  if(overallHtml||chartsHtml){
+    tempoBlock='<div class="stitle mt12">Tempo-Verlauf</div>';
+    if(overallHtml)tempoBlock+=overallHtml;
+    if(chartsHtml)tempoBlock+='<div style="font-size:11px;color:var(--muted);margin:8px 0 4px">Einzelne Abschnitte</div>'+chartsHtml;
+  }
+  chartsHtml=tempoBlock;
   
   // Rating history for this piece
   var ratingHtml=buildPieceRatingHistory(p);
@@ -906,6 +912,43 @@ function renderDetail(id){
 }
 
 // === COMBINED TEMPO CHART ===
+function buildOverallTempoChart(p){
+  // Overall = the slowest section over time (how fast the whole piece can be played).
+  var secNames=(p.sections||[]).filter(function(s){return getSecHist(p.name,s.name).length;}).map(function(s){return s.name;});
+  if(!secNames.length)return '';
+  var hist=mergeTempoHistories(p.name,secNames).slice(-40);
+  if(!hist.length)return '';
+  var target=(p.sections||[]).reduce(function(a,s){return Math.max(a,s.targetBpm||0);},0);
+  var w=320,h=140,pad=25;
+  var gmin=999,gmax=target||0;
+  hist.forEach(function(e){if(e.bpm<gmin)gmin=e.bpm;if(e.bpm>gmax)gmax=e.bpm;});
+  gmin=Math.max(0,gmin-5);gmax+=5;var range=Math.max(gmax-gmin,10);
+  var svg='<svg viewBox="0 0 '+w+' '+h+'" style="width:100%;height:auto;display:block">';
+  if(target){
+    var ty=pad+(1-(target-gmin)/range)*(h-pad*2);
+    svg+='<line x1="'+pad+'" y1="'+ty+'" x2="'+(w-pad)+'" y2="'+ty+'" stroke="var(--muted)" stroke-width="0.5" stroke-dasharray="3,3" opacity="0.4"/>';
+    svg+='<text x="'+(w-pad+2)+'" y="'+(ty+3)+'" font-size="8" fill="var(--muted)" font-family="DM Sans">'+target+'</text>';
+  }
+  var col='#2a9d8f';
+  if(hist.length===1){
+    var sy=pad+(1-(hist[0].bpm-gmin)/range)*(h-pad*2);
+    svg+='<circle cx="'+(w-pad)+'" cy="'+sy+'" r="3.5" fill="'+col+'"/>';
+    svg+='<text x="'+(w-pad)+'" y="'+(sy-6)+'" font-size="10" fill="'+col+'" text-anchor="end" font-weight="600" font-family="DM Sans">'+hist[0].bpm+'</text>';
+  }else{
+    var stepX=(w-pad*2)/(hist.length-1);
+    var pts=hist.map(function(e,i){return (pad+i*stepX)+','+(pad+(1-(e.bpm-gmin)/range)*(h-pad*2));});
+    svg+='<polyline points="'+pts.join(' ')+'" fill="none" stroke="'+col+'" stroke-width="2.5" stroke-linejoin="round"/>';
+    var lp=hist[hist.length-1];
+    var lx=pad+(hist.length-1)*stepX,ly=pad+(1-(lp.bpm-gmin)/range)*(h-pad*2);
+    svg+='<circle cx="'+lx+'" cy="'+ly+'" r="3.5" fill="'+col+'"/>';
+    svg+='<text x="'+lx+'" y="'+(ly-6)+'" font-size="11" fill="'+col+'" text-anchor="end" font-weight="700" font-family="DM Sans">'+lp.bpm+'</text>';
+    svg+='<text x="'+pad+'" y="'+(h-2)+'" font-size="8" fill="var(--muted)" font-family="DM Sans">'+new Date(hist[0].date).toLocaleDateString('de-DE',{day:'numeric',month:'short'})+'</text>';
+    svg+='<text x="'+(w-pad)+'" y="'+(h-2)+'" font-size="8" fill="var(--muted)" text-anchor="end" font-family="DM Sans">'+new Date(lp.date).toLocaleDateString('de-DE',{day:'numeric',month:'short'})+'</text>';
+  }
+  svg+='</svg>';
+  return '<div class="card" style="padding:10px"><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Ganzes Stück (langsamster Abschnitt)</div>'+svg+'</div>';
+}
+
 function buildCombinedTempoChart(p){
   var secs=(p.sections||[]).filter(function(s){return s.targetBpm;});
   var lineColors=['#2a9d8f','#c76a4a','#a4546e','#b07d3a','#6b8193','#7c9070'];
@@ -1520,11 +1563,22 @@ function autoSplitSections(pid){
   // Default BPM inherited from an existing section that has a target
   var ref=(p.sections||[]).find(function(s){return s.targetBpm;})||{};
   var defStart=ref.startBpm||0,defTarget=ref.targetBpm||0;
-  // Existing sections with a parseable bar range + their practiced tempo (for carry-over)
-  var ranges=[];
+  // Candidate source histories for carry-over: current sections AND orphaned tempo keys
+  // (so a re-run pulls back the verlauf of blocks that were removed earlier).
+  var prefix=p.name+'::';
+  var curNames={};
+  (p.sections||[]).forEach(function(s){curNames[s.name]=true;});
+  var sources=[];
   (p.sections||[]).forEach(function(s){
-    var r=parseBarRange(s.name,total);
-    if(r)ranges.push({start:r.start,end:r.end,bpm:getSecLast(p.name,s.name)});
+    var r=parseBarRange(s.name,total);var h=getSecHist(p.name,s.name);
+    if(r&&h.length)sources.push({start:r.start,end:r.end,hist:h});
+  });
+  Object.keys(tempoHist).forEach(function(k){
+    if(k.indexOf(prefix)!==0)return;
+    var nm2=k.slice(prefix.length);
+    if(curNames[nm2])return;
+    var r=parseBarRange(nm2,total);var h=tempoHist[k];
+    if(r&&h&&h.length)sources.push({start:r.start,end:r.end,hist:h});
   });
   // Keep manual sections, drop previous auto blocks
   var manual=(p.sections||[]).filter(function(s){return !s.auto;});
@@ -1535,14 +1589,17 @@ function autoSplitSections(pid){
     maxId++;
     var nm=(start===end?('T. '+start):('T. '+start+'–'+end));
     autoSecs.push({id:maxId,name:nm,mode:'ueben',startBpm:defStart,targetBpm:defTarget,focus:['sauberkeit'],auto:true});
-    // Carry over: highest practiced tempo from any overlapping existing section
-    var inherit=0;
-    ranges.forEach(function(r){
-      if(r.bpm>inherit && start<=r.end && end>=r.start)inherit=r.bpm;
-    });
+    // Carry over the FULL history of the best overlapping source (most data points)
     var key=secKey(p.name,nm);
-    if(inherit>0 && !(tempoHist[key]&&tempoHist[key].length)){
-      tempoHist[key]=[{date:new Date().toISOString(),bpm:inherit}];
+    var alreadyReal=tempoHist[key]&&tempoHist[key].some(function(e){return !e.transferred;});
+    if(!alreadyReal){
+      var best=null;
+      sources.forEach(function(src){
+        if(start<=src.end&&end>=src.start){if(!best||src.hist.length>best.hist.length)best=src;}
+      });
+      if(best&&best.hist.length){
+        tempoHist[key]=best.hist.map(function(e){return {date:e.date,bpm:e.bpm,transferred:true};});
+      }
     }
   }
   p.sections=manual.concat(autoSecs);
@@ -3723,7 +3780,7 @@ function renderSettings(){
     '<button class="btn btn-soft mt12" onclick="nav(\'home\')">← Zurück</button>'+
     '<div style="text-align:center;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">'+
       '<div style="font-size:13px;color:var(--text);font-weight:500">🎸 Übezeit v3.0</div>'+
-      '<div style="font-size:11px;color:var(--muted)">Build 2026-06-23-G</div>'+
+      '<div style="font-size:11px;color:var(--muted)">Build 2026-06-23-H</div>'+
     '</div>';
 }
 
