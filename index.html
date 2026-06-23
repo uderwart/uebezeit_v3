@@ -491,7 +491,7 @@ function save(){
 function secKey(pName,sName){return pName+'::'+sName;}
 function getLast(n){var h=tempoHist[n]||[];return h.length?h[h.length-1].bpm:0;}
 function getHist(n){return tempoHist[n]||[];}
-function getSecLast(pName,sName){return getLast(secKey(pName,sName))||getLast(pName);}
+function getSecLast(pName,sName){return getLast(secKey(pName,sName));}
 function getSecHist(pName,sName){var h=getHist(secKey(pName,sName));return h.length?h:getHist(pName);}
 
 // === STREAK ===
@@ -1191,7 +1191,10 @@ function editPiece(id){
   var secs=p.sections||[];
   
   // Section editors
-  var secsHtml='';
+  var manualHtml='';
+  var autoCardsHtml='';
+  var autoTilesHtml='';
+  var autoCount=0;
   secs.forEach(function(s,si){
     var last=getSecLast(p.name,s.name);
     var modeToggle='<div style="display:flex;gap:4px;margin-top:6px">'+
@@ -1221,7 +1224,7 @@ function editPiece(id){
     });
     focusHtml+='</div><div style="display:flex;gap:4px;margin-top:4px"><input type="text" id="custom-focus-'+p.id+'-'+si+'" placeholder="Eigener Fokus..." style="flex:1;font-size:12px;padding:6px"><button class="btn btn-xs btn-soft" onclick="addCustomFocus('+p.id+','+si+')">+</button></div></div>';
     
-    secsHtml+='<div class="card" style="padding:12px;margin-bottom:10px;border-left:3px solid var(--accent2)">'+
+    var cardHtml='<div class="card" style="padding:12px;margin-bottom:10px;border-left:3px solid var(--accent2)">'+
       '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Abschnitt '+(si+1)+'</div>'+
       '<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><input type="text" value="'+esc(s.name)+'" data-piece="'+p.id+'" data-sec="'+si+'" data-field="name" style="flex:1;font-size:14px;padding:8px"><button class="rm-btn" onclick="delSection('+p.id+','+si+')">×</button></div>'+
       '<div style="display:flex;gap:8px"><div style="flex:1"><div style="font-size:10px;color:var(--muted)">Start</div><input type="number" value="'+(s.startBpm||'')+'" data-piece="'+p.id+'" data-sec="'+si+'" data-field="startBpm" placeholder="BPM" style="font-size:14px;padding:8px"></div>'+
@@ -1229,7 +1232,43 @@ function editPiece(id){
       (last?'<div style="text-align:center"><div style="font-size:10px;color:var(--muted)">Ist</div><div style="font-size:18px;font-weight:700;color:var(--accent2);padding:8px">'+last+'</div></div>':'')+'</div>'+
       modeToggle+focusHtml+
     '</div>';
+    
+    if(s.auto){
+      autoCount++;
+      autoCardsHtml+=cardHtml;
+      var tgt=s.targetBpm||0;
+      var col=(last===0)?'var(--border)':((tgt&&last>=tgt)?'var(--done)':'var(--accent2)');
+      var mSel=mergeMode&&mergeSel.indexOf(si)>=0;
+      autoTilesHtml+='<div onclick="'+(mergeMode?('toggleMergeSel('+p.id+','+si+')'):('toggleAutoSecs('+p.id+')'))+'" style="cursor:pointer;border:1px solid '+(mSel?'var(--accent2)':'var(--border)')+';border-left:3px solid '+col+';border-radius:8px;padding:6px 8px;min-width:60px;text-align:center;'+(mSel?'background:var(--surface2);box-shadow:0 0 0 2px var(--accent2) inset':'')+'">'+
+        (mSel?'<div style="font-size:10px;color:var(--accent2);font-weight:700">✓</div>':'')+
+        '<div style="font-size:11px;font-weight:700">'+esc(s.name)+'</div>'+
+        '<div style="font-size:10px;color:var(--muted)">'+(last?last:'–')+(tgt?'/'+tgt:'')+'</div>'+
+      '</div>';
+    }else{
+      manualHtml+=cardHtml;
+    }
   });
+  var secsHtml=manualHtml;
+  if(autoCount){
+    var grp='<div class="card" style="padding:10px;margin-bottom:10px">';
+    if(mergeMode){
+      grp+='<div style="font-size:13px;font-weight:600;margin-bottom:4px">🔗 Takte zusammenfassen</div>'+
+        '<div style="font-size:11px;color:var(--muted);margin-bottom:8px">Tippe die Takte an, die zu einem Block werden sollen. Takte dazwischen werden mit einbezogen.</div>'+
+        '<div style="display:flex;flex-wrap:wrap;gap:6px">'+autoTilesHtml+'</div>'+
+        '<div class="row" style="gap:8px;margin-top:10px">'+
+          '<button class="btn btn-xs btn-soft" onclick="toggleMergeMode('+p.id+')" style="flex:1">Abbrechen</button>'+
+          '<button class="btn btn-xs btn-go" onclick="mergeSections('+p.id+')" style="flex:1;opacity:'+(mergeSel.length<2?'.4':'1')+'">✓ '+mergeSel.length+' zusammenfassen</button>'+
+        '</div>';
+    }else{
+      grp+='<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">'+
+        '<div onclick="toggleAutoSecs('+p.id+')" style="cursor:pointer;font-size:13px;font-weight:600;flex:1">📐 Einzeltakte ('+autoCount+') <span style="color:var(--muted);font-weight:400">'+(autoSecsOpen?'▲':'▼')+'</span></div>'+
+        (autoCount>1?'<button class="btn btn-xs btn-soft" onclick="toggleMergeMode('+p.id+')" style="width:auto;color:var(--accent2)">🔗 Zusammenfassen</button>':'')+
+      '</div>'+
+      (autoSecsOpen?('<div style="margin-top:10px">'+autoCardsHtml+'</div>'):('<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">'+autoTilesHtml+'</div>'));
+    }
+    grp+='</div>';
+    secsHtml+=grp;
+  }
   
   // Links editor
   var allLinks=p.links||[];
@@ -1373,6 +1412,69 @@ function addSection(pid){
   save();editPiece(pid);
 }
 
+var autoSecsOpen=false; // editor: are the auto-generated bars expanded?
+function toggleAutoSecs(pid){savePieceFields(pid);autoSecsOpen=!autoSecsOpen;editPiece(pid);}
+
+// Merge bars back into one block
+var mergeMode=false;
+var mergeSel=[]; // section indices selected for merging
+function toggleMergeMode(pid){savePieceFields(pid);mergeMode=!mergeMode;mergeSel=[];editPiece(pid);}
+function toggleMergeSel(pid,si){
+  savePieceFields(pid);
+  var i=mergeSel.indexOf(si);
+  if(i>=0)mergeSel.splice(i,1);else mergeSel.push(si);
+  editPiece(pid);
+}
+function mergeSections(pid){
+  var p=pieces.find(function(x){return x.id===pid;});if(!p)return;
+  if(mergeSel.length<2){mergeMode=false;mergeSel=[];editPiece(pid);return;}
+  // Ranges of the selected bars
+  var selRanges=[];
+  mergeSel.forEach(function(si){
+    var s=p.sections[si];if(!s)return;
+    var r=parseBarRange(s.name,9999);
+    if(r)selRanges.push(r);
+  });
+  if(selRanges.length<2){mergeMode=false;mergeSel=[];editPiece(pid);return;}
+  var minStart=selRanges.reduce(function(a,r){return Math.min(a,r.start);},1e9);
+  var maxEnd=selRanges.reduce(function(a,r){return Math.max(a,r.end);},0);
+  // Absorb every section whose range lies fully within [minStart..maxEnd]
+  var absorbedIdx=[];
+  p.sections.forEach(function(s,i){
+    var r=parseBarRange(s.name,9999);
+    if(r&&r.start>=minStart&&r.end<=maxEnd)absorbedIdx.push(i);
+  });
+  if(!absorbedIdx.length){mergeMode=false;mergeSel=[];editPiece(pid);return;}
+  var absorbed=absorbedIdx.map(function(i){return p.sections[i];});
+  var starts=absorbed.map(function(s){return s.startBpm||0;}).filter(function(v){return v>0;});
+  var targets=absorbed.map(function(s){return s.targetBpm||0;}).filter(function(v){return v>0;});
+  var lasts=absorbed.map(function(s){return getSecLast(p.name,s.name);});
+  var newStart=starts.length?Math.min.apply(null,starts):0;
+  var newTarget=targets.length?Math.max.apply(null,targets):0;
+  var newLast=Math.min.apply(null,lasts); // block runs only as fast as its weakest bar
+  var nm=(minStart===maxEnd?('T. '+minStart):('T. '+minStart+'–'+maxEnd));
+  var maxId=p.sections.reduce(function(a,s){return Math.max(a,s.id||0);},0);
+  var newSec={id:maxId+1,name:nm,mode:'ueben',startBpm:newStart,targetBpm:newTarget,focus:['sauberkeit']};
+  var insertAt=absorbedIdx[0];
+  absorbedIdx.slice().sort(function(a,b){return b-a;}).forEach(function(i){p.sections.splice(i,1);});
+  p.sections.splice(insertAt,0,newSec);
+  if(newLast>0)tempoHist[secKey(p.name,nm)]=[{date:new Date().toISOString(),bpm:newLast}];
+  mergeMode=false;mergeSel=[];
+  save();editPiece(pid);
+}
+
+function parseBarRange(name,total){
+  if(!name)return null;
+  var s=String(name).replace(/[–—]/g,'-').toLowerCase().trim();
+  var m=s.match(/(\d+)\s*-\s*ende/);
+  if(m)return {start:parseInt(m[1]),end:total};
+  m=s.match(/(\d+)\s*-\s*(\d+)/);
+  if(m)return {start:parseInt(m[1]),end:parseInt(m[2])};
+  m=s.match(/(?:t\.?\s*|takt\s*)?(\d+)\s*$/);
+  if(m)return {start:parseInt(m[1]),end:parseInt(m[1])};
+  return null;
+}
+
 function autoSplitSections(pid){
   savePieceFields(pid);
   var p=pieces.find(function(x){return x.id===pid;});if(!p)return;
@@ -1385,6 +1487,12 @@ function autoSplitSections(pid){
   // Default BPM inherited from an existing section that has a target
   var ref=(p.sections||[]).find(function(s){return s.targetBpm;})||{};
   var defStart=ref.startBpm||0,defTarget=ref.targetBpm||0;
+  // Existing sections with a parseable bar range + their practiced tempo (for carry-over)
+  var ranges=[];
+  (p.sections||[]).forEach(function(s){
+    var r=parseBarRange(s.name,total);
+    if(r)ranges.push({start:r.start,end:r.end,bpm:getSecLast(p.name,s.name)});
+  });
   // Keep manual sections, drop previous auto blocks
   var manual=(p.sections||[]).filter(function(s){return !s.auto;});
   var maxId=manual.reduce(function(a,s){return Math.max(a,s.id||0);},0);
@@ -1392,9 +1500,28 @@ function autoSplitSections(pid){
   for(var start=1;start<=total;start+=block){
     var end=Math.min(start+block-1,total);
     maxId++;
-    autoSecs.push({id:maxId,name:(start===end?('T. '+start):('T. '+start+'–'+end)),mode:'ueben',startBpm:defStart,targetBpm:defTarget,focus:['sauberkeit'],auto:true});
+    var nm=(start===end?('T. '+start):('T. '+start+'–'+end));
+    autoSecs.push({id:maxId,name:nm,mode:'ueben',startBpm:defStart,targetBpm:defTarget,focus:['sauberkeit'],auto:true});
+    // Carry over: highest practiced tempo from any overlapping existing section
+    var inherit=0;
+    ranges.forEach(function(r){
+      if(r.bpm>inherit && start<=r.end && end>=r.start)inherit=r.bpm;
+    });
+    var key=secKey(p.name,nm);
+    if(inherit>0 && !(tempoHist[key]&&tempoHist[key].length)){
+      tempoHist[key]=[{date:new Date().toISOString(),bpm:inherit}];
+    }
   }
   p.sections=manual.concat(autoSecs);
+  // Remove old covered blocks (their tempo was just transferred). Keep whole-piece
+  // sections (e.g. "1-Ende", "Ganzes Stück") and any non-numeric names.
+  p.sections=p.sections.filter(function(s){
+    if(s.auto)return true;
+    var r=parseBarRange(s.name,total);
+    if(!r)return true;
+    var coveredSub=(r.start>=1&&r.end<=total&&(r.start>1||r.end<total));
+    return !coveredSub;
+  });
   save();editPiece(pid);
 }
 
@@ -1428,11 +1555,14 @@ var practicePaused=false,pauseStart=null,totalPausedMs=0;
 var currentTempo=80,roundStart=null,rounds=[];
 var sessionTotalElapsed=0;
 var pendingEntry=null;
+var practiceTargetMin=0; // per-session practice time for standalone practice (0 = use default)
 
 // Plan-driven session (Regisseur)
 // Uses planActive, planItems, planIndex, planPieceCountdown, planWarningShown from Plan Runner section
 
 function getSessionTargetMin(){
+  // Standalone practice: use the per-session value the user set on the practice screen
+  if(!planActive&&practiceTargetMin>0)return practiceTargetMin;
   // If a plan is cached from today, use plan total time
   try{
     var cached=JSON.parse(localStorage.getItem('uz-uebeplan'));
@@ -1445,6 +1575,12 @@ function getSessionTargetMin(){
     }
   }catch(e){}
   return settings.sessionMin||45;
+}
+function setPracticeTarget(v){
+  var m=Math.max(1,Math.min(240,parseInt(v)||0));
+  practiceTargetMin=m;
+  var el=document.getElementById("p-timer");if(el)el.textContent=fmtCountdown();
+  var sub=document.getElementById("p-timer-sub");if(sub)sub.innerHTML=fmtTimerSub(false);
 }
 
 // Pomodoro
@@ -1468,7 +1604,7 @@ function startPracticeFromDetail(pid,si){
   rounds=[];roundStart=null;
   practicing=true;
   // Reset session timer only if not in a plan session
-  if(!planActive)sessionTotalElapsed=0;
+  if(!planActive){sessionTotalElapsed=0;practiceTargetMin=settings.sessionMin||45;}
   
   if(practiceMode==='ueben'){
     currentTempo=sec.startBpm||getSecLast(p.name,sec.name)||sec.targetBpm||80;
@@ -1639,6 +1775,7 @@ function renderPractice(){
       '<div style="font-size:12px;color:var(--muted);margin-top:2px" id="p-timer-sub">'+fmtTimerSub(isRunning)+'</div>'+
       (practicePaused?'<div style="font-size:14px;color:var(--accent);font-weight:600;margin-top:4px">⏸ Pausiert</div>':'')+
       (!isRunning?'<div style="font-size:12px;color:var(--muted);margin-top:4px">'+(isPlay?'Wenn bereit, ▶ drücken':'Tempo einstellen, dann ▶ drücken')+'</div>':'')+
+      (!isRunning&&!planActive?'<div style="margin-top:8px;display:inline-flex;align-items:center;gap:6px"><span style="font-size:12px;color:var(--muted)">Übezeit</span><input type="number" min="1" max="240" value="'+getSessionTargetMin()+'" onchange="setPracticeTarget(this.value)" style="width:64px;font-size:14px;padding:6px;text-align:center">'+'<span style="font-size:12px;color:var(--muted)">Min</span></div>':'')+
     '</div>'+
     tempoHtml+
     '<div class="row" style="gap:8px;margin-top:10px">'+
@@ -1689,7 +1826,7 @@ function fmtTimerSub(isRunning){
     var info=item?(planIndex+1)+'/'+planItems.length+' · '+fmt(practiceElapsed)+' geübt':'';
     return info;
   }
-  if(!isRunning)return getSessionTargetMin()+' Min geplant';
+  if(!isRunning)return planActive?(getSessionTargetMin()+' Min geplant'):'';
   var totalSec=getSessionTargetMin()*60;
   var remaining=totalSec-sessionTotalElapsed;
   if(remaining<=0)return '<span style="color:var(--accent);font-weight:600">Zeit ist um · '+fmt(sessionTotalElapsed)+' geübt</span>';
@@ -3553,7 +3690,7 @@ function renderSettings(){
     '<button class="btn btn-soft mt12" onclick="nav(\'home\')">← Zurück</button>'+
     '<div style="text-align:center;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">'+
       '<div style="font-size:13px;color:var(--text);font-weight:500">🎸 Übezeit v3.0</div>'+
-      '<div style="font-size:11px;color:var(--muted)">Build 2026-05-31-E</div>'+
+      '<div style="font-size:11px;color:var(--muted)">Build 2026-06-23-C</div>'+
     '</div>';
 }
 
