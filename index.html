@@ -914,7 +914,7 @@ function buildCombinedTempoChart(p){
   
   secs.forEach(function(s,si){
     var hist=getSecHist(p.name,s.name);
-    if(hist.length>=2){hasData=true;}
+    if(hist.length>=1){hasData=true;}
     allData.push({name:s.name,target:s.targetBpm,hist:hist.slice(-20),color:lineColors[si%lineColors.length]});
   });
   if(!hasData)return '';
@@ -946,19 +946,18 @@ function buildCombinedTempoChart(p){
     svg+='<text x="'+(w-pad+2)+'" y="'+(ty+3)+'" font-size="8" fill="var(--muted)" font-family="DM Sans">'+d.target+'</text>';
   });
   
-  // Draw lines for each section
+  // Draw lines for each section (single point -> dot, so the graph can grow)
   allData.forEach(function(d){
-    if(d.hist.length<2)return;
+    if(!d.hist.length)return;
+    if(d.hist.length===1){
+      var sx=w/2;
+      var sy=pad+(1-(d.hist[0].bpm-globalMin)/range)*(h-pad*2);
+      svg+='<circle cx="'+sx+'" cy="'+sy+'" r="3.5" fill="'+d.color+'"/>';
+      svg+='<text x="'+sx+'" y="'+(sy-6)+'" font-size="9" fill="'+d.color+'" text-anchor="middle" font-weight="600" font-family="DM Sans">'+d.hist[0].bpm+'</text>';
+      return;
+    }
     var stepX=(w-pad*2)/(d.hist.length-1);
-    
-    // Line
-    var pts=d.hist.map(function(h,i){
-      var x=pad+i*stepX;
-      var y=pad+(1-(h.bpm-globalMin)/range)*(h-pad*2);
-      return x+','+y;
-    });
-    // Fix: recalculate y properly
-    pts=d.hist.map(function(pt,i){
+    var pts=d.hist.map(function(pt,i){
       var x=pad+i*stepX;
       var y=pad+(1-(pt.bpm-globalMin)/range)*(h-pad*2);
       return x+','+y;
@@ -978,12 +977,14 @@ function buildCombinedTempoChart(p){
   if(longest.hist.length>=2){
     svg+='<text x="'+pad+'" y="'+(h-2)+'" font-size="8" fill="var(--muted)" font-family="DM Sans">'+new Date(longest.hist[0].date).toLocaleDateString('de-DE',{day:'numeric',month:'short'})+'</text>';
     svg+='<text x="'+(w-pad)+'" y="'+(h-2)+'" font-size="8" fill="var(--muted)" text-anchor="end" font-family="DM Sans">'+new Date(longest.hist[longest.hist.length-1].date).toLocaleDateString('de-DE',{day:'numeric',month:'short'})+'</text>';
+  }else if(longest.hist.length===1){
+    svg+='<text x="'+(w/2)+'" y="'+(h-2)+'" font-size="8" fill="var(--muted)" text-anchor="middle" font-family="DM Sans">'+new Date(longest.hist[0].date).toLocaleDateString('de-DE',{day:'numeric',month:'short'})+'</text>';
   }
   
   svg+='</svg>';
   
   // Legend
-  var legend=allData.filter(function(d){return d.hist.length>=2;}).map(function(d){
+  var legend=allData.filter(function(d){return d.hist.length>=1;}).map(function(d){
     return '<span style="font-size:10px;color:'+d.color+'">● '+esc(d.name)+'</span>';
   }).join(' ');
   
@@ -3713,7 +3714,7 @@ function renderSettings(){
     '<button class="btn btn-soft mt12" onclick="nav(\'home\')">← Zurück</button>'+
     '<div style="text-align:center;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">'+
       '<div style="font-size:13px;color:var(--text);font-weight:500">🎸 Übezeit v3.0</div>'+
-      '<div style="font-size:11px;color:var(--muted)">Build 2026-06-23-E</div>'+
+      '<div style="font-size:11px;color:var(--muted)">Build 2026-06-23-F</div>'+
     '</div>';
 }
 
