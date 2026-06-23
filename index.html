@@ -1425,6 +1425,28 @@ function toggleMergeSel(pid,si){
   if(i>=0)mergeSel.splice(i,1);else mergeSel.push(si);
   editPiece(pid);
 }
+// Build a block's tempo history from its bars: at each practice event the block
+// tempo = the slowest bar so far (carry-forward min). Preserves the full timeline.
+function mergeTempoHistories(pName,secNames){
+  var events=[];
+  secNames.forEach(function(nm){
+    (tempoHist[secKey(pName,nm)]||[]).forEach(function(e){
+      if(e&&e.bpm)events.push({date:e.date,name:nm,bpm:e.bpm});
+    });
+  });
+  events.sort(function(a,b){return new Date(a.date)-new Date(b.date);});
+  var lastByBar={};
+  secNames.forEach(function(nm){lastByBar[nm]=0;});
+  var out=[];
+  events.forEach(function(ev){
+    lastByBar[ev.name]=ev.bpm;
+    var mn=Infinity;
+    secNames.forEach(function(nm){if(lastByBar[nm]<mn)mn=lastByBar[nm];});
+    if(isFinite(mn)&&mn>0)out.push({date:ev.date,bpm:mn});
+  });
+  return out;
+}
+
 function mergeSections(pid){
   var p=pieces.find(function(x){return x.id===pid;});if(!p)return;
   if(mergeSel.length<2){mergeMode=false;mergeSel=[];editPiece(pid);return;}
@@ -1456,9 +1478,10 @@ function mergeSections(pid){
   var maxId=p.sections.reduce(function(a,s){return Math.max(a,s.id||0);},0);
   var newSec={id:maxId+1,name:nm,mode:'ueben',startBpm:newStart,targetBpm:newTarget,focus:['sauberkeit']};
   var insertAt=absorbedIdx[0];
+  var mergedHist=mergeTempoHistories(p.name,absorbed.map(function(s){return s.name;}));
   absorbedIdx.slice().sort(function(a,b){return b-a;}).forEach(function(i){p.sections.splice(i,1);});
   p.sections.splice(insertAt,0,newSec);
-  if(newLast>0)tempoHist[secKey(p.name,nm)]=[{date:new Date().toISOString(),bpm:newLast}];
+  if(mergedHist.length)tempoHist[secKey(p.name,nm)]=mergedHist;
   mergeMode=false;mergeSel=[];
   save();editPiece(pid);
 }
@@ -3690,7 +3713,7 @@ function renderSettings(){
     '<button class="btn btn-soft mt12" onclick="nav(\'home\')">← Zurück</button>'+
     '<div style="text-align:center;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">'+
       '<div style="font-size:13px;color:var(--text);font-weight:500">🎸 Übezeit v3.0</div>'+
-      '<div style="font-size:11px;color:var(--muted)">Build 2026-06-23-C</div>'+
+      '<div style="font-size:11px;color:var(--muted)">Build 2026-06-23-D</div>'+
     '</div>';
 }
 
