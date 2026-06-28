@@ -1755,11 +1755,22 @@ function importImages(ev){
   fr.readAsText(f);
 }
 
-// Große Ansicht eines Noten-Ausschnitts beim Üben (antippbar, Zoomstufen)
+// Große Ansicht eines Noten-Ausschnitts beim Üben (antippbar, Zoomstufen, drehbar)
 var sheetZoomData=null,sheetZoomLevel=2;
 function openSheetZoom(imgId){idbGet(imgId).then(function(d){if(!d)return;sheetZoomData=d;sheetZoomLevel=2;renderSheetZoom();}).catch(function(){});}
 function setSheetZoom(z){sheetZoomLevel=z;renderSheetZoom();}
 function closeSheetZoom(){var el=document.getElementById('sheet-zoom');if(el)el.remove();sheetZoomData=null;}
+function rotateSheet(){
+  if(!sheetZoomData)return;
+  var img=new Image();
+  img.onload=function(){
+    var c=document.createElement('canvas');c.width=img.naturalHeight;c.height=img.naturalWidth;
+    var ctx=c.getContext('2d');ctx.translate(c.width/2,c.height/2);ctx.rotate(Math.PI/2);
+    ctx.drawImage(img,-img.naturalWidth/2,-img.naturalHeight/2);
+    sheetZoomData=c.toDataURL('image/jpeg',0.85);renderSheetZoom();
+  };
+  img.src=sheetZoomData;
+}
 function renderSheetZoom(){
   if(!sheetZoomData)return;
   var el=document.getElementById('sheet-zoom');
@@ -1771,9 +1782,12 @@ function renderSheetZoom(){
   el.innerHTML=
     '<div style="display:flex;justify-content:space-between;align-items:center;padding:12px;gap:8px;flex-shrink:0">'+
       '<div style="display:flex;gap:6px">'+zoomBtns+'</div>'+
-      '<button onclick="closeSheetZoom()" style="padding:6px 14px;border-radius:8px;border:none;font-size:14px;font-weight:700;cursor:pointer;background:rgba(255,255,255,.15);color:#fff">✕</button>'+
+      '<div style="display:flex;gap:6px">'+
+        '<button onclick="rotateSheet()" style="padding:6px 12px;border-radius:8px;border:none;font-size:14px;font-weight:700;cursor:pointer;background:rgba(255,255,255,.15);color:#fff">⟳ 90°</button>'+
+        '<button onclick="closeSheetZoom()" style="padding:6px 14px;border-radius:8px;border:none;font-size:14px;font-weight:700;cursor:pointer;background:rgba(255,255,255,.15);color:#fff">✕</button>'+
+      '</div>'+
     '</div>'+
-    '<div style="flex:1;overflow:auto;-webkit-overflow-scrolling:touch;display:flex;align-items:flex-start"><img src="'+sheetZoomData+'" style="width:'+(sheetZoomLevel*100)+'%;max-width:none;display:block"></div>';
+    '<div style="flex:1;overflow:auto;-webkit-overflow-scrolling:touch"><img src="'+sheetZoomData+'" style="width:'+(sheetZoomLevel*100)+'%;max-width:none;display:block"></div>';
 }
 
 function autoSplitSections(pid){
@@ -4014,7 +4028,7 @@ function renderSettings(){
     '<button class="btn btn-soft mt12" onclick="nav(\'home\')">← Zurück</button>'+
     '<div style="text-align:center;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">'+
       '<div style="font-size:13px;color:var(--text);font-weight:500">🎸 Übezeit v3.0</div>'+
-      '<div style="font-size:11px;color:var(--muted)">Build 2026-06-23-S</div>'+
+      '<div style="font-size:11px;color:var(--muted)">Build 2026-06-23-T</div>'+
     '</div>';
 }
 
