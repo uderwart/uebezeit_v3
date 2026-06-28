@@ -539,12 +539,9 @@ var practicing=false;
 var practiceReturnView=null; // remember which view to return to practice from
 
 function nav(v){
-  // If practicing and navigating away: pause, don't abort
+  // If practicing and navigating away: keep the timer running (away time counts as
+  // practice); use the Pause button for real breaks. Just remember where to return.
   if(practicing&&v!=='practice'&&v!=='detail'){
-    if(!practicePaused&&practiceStart){
-      practicePaused=true;
-      pauseStart=Date.now();
-    }
     practiceReturnView=v;
     savePending();
   }
@@ -1883,6 +1880,8 @@ var practiceStart=null,practiceElapsed=0,practiceTimer=null;
 var practicePaused=false,pauseStart=null,totalPausedMs=0;
 var currentTempo=80,roundStart=null,rounds=[];
 var sessionTotalElapsed=0;
+var lastTickTs=null;   // wall-clock anchor so background time counts correctly
+var timeUpShown=false; // robust "time is up" trigger across time jumps
 var pendingEntry=null;
 var practiceTargetMin=0; // per-session practice time for standalone practice (0 = use default)
 
@@ -1932,8 +1931,9 @@ function startPracticeFromDetail(pid,si){
   practiceStart=null;
   rounds=[];roundStart=null;
   practicing=true;
+  lastTickTs=null;
   // Reset session timer only if not in a plan session
-  if(!planActive){sessionTotalElapsed=0;practiceTargetMin=settings.sessionMin||45;}
+  if(!planActive){sessionTotalElapsed=0;timeUpShown=false;practiceTargetMin=settings.sessionMin||45;}
   
   if(practiceMode==='ueben'){
     currentTempo=sec.startBpm||getSecLast(p.name,sec.name)||sec.targetBpm||80;
@@ -1956,7 +1956,8 @@ function startWholepiece(pid){
   practiceStart=null;
   rounds=[];roundStart=null;
   practicing=true;
-  if(!planActive)sessionTotalElapsed=0;
+  lastTickTs=null;
+  if(!planActive){sessionTotalElapsed=0;timeUpShown=false;}
   
   document.querySelectorAll(".view").forEach(function(x){x.classList.remove("on");});
   document.getElementById("v-practice").classList.add("on");
@@ -2005,6 +2006,8 @@ function restorePending(){
   practiceElapsed=s.elapsed;
   practicing=true;
   totalPausedMs=0;
+  lastTickTs=null;
+  timeUpShown=(sessionTotalElapsed>=getSessionTargetMin()*60);
   // Resume paused, carrying the practiced time
   practiceStart=Date.now()-practiceElapsed*1000;
   practicePaused=true;pauseStart=Date.now();
@@ -2017,9 +2020,15 @@ function restorePending(){
 }
 
 function practiceTick(){
-  if(practicePaused)return;
-  practiceElapsed=Math.round((Date.now()-practiceStart-totalPausedMs)/1000);
-  sessionTotalElapsed++;
+  var now=Date.now();
+  if(practicePaused){lastTickTs=now;return;}
+  practiceElapsed=Math.round((now-practiceStart-totalPausedMs)/1000);
+  // Count real elapsed time since the last tick, so time spent with the app in the
+  // background (e.g. glancing at a metronome) is still counted instead of frozen.
+  var dt=lastTickTs?(now-lastTickTs)/1000:1;
+  lastTickTs=now;
+  if(dt<0)dt=0; if(dt>43200)dt=0; // ignore clock jumps / >12h gaps
+  sessionTotalElapsed+=dt;
   savePending();
   if(practiceMode==='primetime'){
     var pel=document.getElementById("p-timer");
@@ -2030,9 +2039,7 @@ function practiceTick(){
   if(planActive)checkPlanCountdown();
   if(!planActive){
     var totalSec=getSessionTargetMin()*60;
-    if(sessionTotalElapsed>=totalSec&&sessionTotalElapsed-1<totalSec){
-      showTimeUp();
-    }
+    if(!timeUpShown&&sessionTotalElapsed>=totalSec){timeUpShown=true;showTimeUp();}
   }
 }
 
@@ -2040,6 +2047,7 @@ function startPracticeTimer(){
   if(practiceStart)return;
   practiceStart=Date.now();
   roundStart=Date.now();
+  lastTickTs=Date.now();
   clearInterval(practiceTimer);
   practiceTimer=setInterval(practiceTick,1000);
   savePending();
@@ -2134,9 +2142,7 @@ function updatePracticeTimer(){
   var sub=document.getElementById("p-timer-sub");if(sub)sub.innerHTML=fmtTimerSub(true);
   // Check if session time is up
   var totalSec=getSessionTargetMin()*60;
-  if(sessionTotalElapsed>=totalSec&&sessionTotalElapsed-1<totalSec){
-    showTimeUp();
-  }
+  if(!planActive&&!timeUpShown&&sessionTotalElapsed>=totalSec){timeUpShown=true;showTimeUp();}
 }
 
 function fmtCountdown(){
@@ -2188,6 +2194,7 @@ function togglePause(){
     totalPausedMs+=Date.now()-pauseStart;
     practicePaused=false;pauseStart=null;
     roundStart=Date.now();
+    lastTickTs=Date.now();
   }else{
     practicePaused=true;pauseStart=Date.now();
     if(metroOn)mStop();
@@ -2601,6 +2608,7 @@ function renderPrimeTime(){
 function startPrimeTimeTimer(){
   if(practiceStart)return;
   practiceStart=Date.now();
+  lastTickTs=Date.now();
   clearInterval(practiceTimer);
   practiceTimer=setInterval(practiceTick,1000);
   savePending();
@@ -4028,7 +4036,7 @@ function renderSettings(){
     '<button class="btn btn-soft mt12" onclick="nav(\'home\')">← Zurück</button>'+
     '<div style="text-align:center;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">'+
       '<div style="font-size:13px;color:var(--text);font-weight:500">🎸 Übezeit v3.0</div>'+
-      '<div style="font-size:11px;color:var(--muted)">Build 2026-06-23-T</div>'+
+      '<div style="font-size:11px;color:var(--muted)">Build 2026-06-23-U</div>'+
     '</div>';
 }
 
@@ -4174,7 +4182,7 @@ function resetAll(){
 
 // === HELPERS ===
 function esc(s){var d=document.createElement("div");d.textContent=s;return d.innerHTML;}
-function fmt(s){return Math.floor(s/60)+":"+String(s%60).padStart(2,"0");}
+function fmt(s){s=Math.floor(s);return Math.floor(s/60)+":"+String(s%60).padStart(2,"0");}
 function fmtDate(iso){var d=new Date(iso);return d.toLocaleDateString("de-DE",{weekday:"short",day:"numeric",month:"short"})+" · "+d.toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"});}
 function getMonday(d){var dt=new Date(d||new Date());var day=dt.getDay();var diff=day===0?6:day-1;dt.setDate(dt.getDate()-diff);dt.setHours(0,0,0,0);return dt;}
 
