@@ -1249,6 +1249,9 @@ function editPiece(id){
   var autoCardsHtml='';
   var autoTilesHtml='';
   var autoCount=0;
+  var mergeTiles='';   // tiles for ALL range-named sections (blocks + single bars)
+  var rangeCount=0;
+  var maxBarEdit=secs.reduce(function(a,s){var r=parseBarRange(s.name,0);return r&&r.end?Math.max(a,r.end):a;},0);
   secs.forEach(function(s,si){
     var last=getSecLast(p.name,s.name);
     var modeToggle='<div style="display:flex;gap:4px;margin-top:6px">'+
@@ -1287,14 +1290,23 @@ function editPiece(id){
       modeToggle+focusHtml+
     '</div>';
     
+    var tgt=s.targetBpm||0;
+    var col=(last===0)?'var(--border)':((tgt&&last>=tgt)?'var(--done)':'var(--accent2)');
+    var rng=parseBarRange(s.name,maxBarEdit||99999);
+    var isRange=rng&&rng.end<99999;
+    if(isRange){
+      rangeCount++;
+      var mSelM=mergeSel.indexOf(si)>=0;
+      mergeTiles+='<div onclick="toggleMergeSel('+p.id+','+si+')" style="cursor:pointer;border:1px solid '+(mSelM?'var(--accent2)':'var(--border)')+';border-left:3px solid '+col+';border-radius:8px;padding:6px 8px;min-width:60px;text-align:center;'+(mSelM?'background:var(--surface2);box-shadow:0 0 0 2px var(--accent2) inset':'')+'">'+
+        (mSelM?'<div style="font-size:10px;color:var(--accent2);font-weight:700">✓</div>':'')+
+        '<div style="font-size:11px;font-weight:700">'+esc(s.name)+'</div>'+
+        '<div style="font-size:10px;color:var(--muted)">'+(last?last:'–')+(tgt?'/'+tgt:'')+'</div>'+
+      '</div>';
+    }
     if(s.auto){
       autoCount++;
       autoCardsHtml+=cardHtml;
-      var tgt=s.targetBpm||0;
-      var col=(last===0)?'var(--border)':((tgt&&last>=tgt)?'var(--done)':'var(--accent2)');
-      var mSel=mergeMode&&mergeSel.indexOf(si)>=0;
-      autoTilesHtml+='<div onclick="'+(mergeMode?('toggleMergeSel('+p.id+','+si+')'):('toggleAutoSecs('+p.id+')'))+'" style="cursor:pointer;border:1px solid '+(mSel?'var(--accent2)':'var(--border)')+';border-left:3px solid '+col+';border-radius:8px;padding:6px 8px;min-width:60px;text-align:center;'+(mSel?'background:var(--surface2);box-shadow:0 0 0 2px var(--accent2) inset':'')+'">'+
-        (mSel?'<div style="font-size:10px;color:var(--accent2);font-weight:700">✓</div>':'')+
+      autoTilesHtml+='<div onclick="toggleAutoSecs('+p.id+')" style="cursor:pointer;border:1px solid var(--border);border-left:3px solid '+col+';border-radius:8px;padding:6px 8px;min-width:60px;text-align:center">'+
         '<div style="font-size:11px;font-weight:700">'+esc(s.name)+'</div>'+
         '<div style="font-size:10px;color:var(--muted)">'+(last?last:'–')+(tgt?'/'+tgt:'')+'</div>'+
       '</div>';
@@ -1302,26 +1314,28 @@ function editPiece(id){
       manualHtml+=cardHtml;
     }
   });
-  var secsHtml=manualHtml;
-  if(autoCount){
-    var grp='<div class="card" style="padding:10px;margin-bottom:10px">';
-    if(mergeMode){
-      grp+='<div style="font-size:13px;font-weight:600;margin-bottom:4px">🔗 Takte zusammenfassen</div>'+
-        '<div style="font-size:11px;color:var(--muted);margin-bottom:8px">Tippe die Takte an, die zu einem Block werden sollen. Takte dazwischen werden mit einbezogen.</div>'+
-        '<div style="display:flex;flex-wrap:wrap;gap:6px">'+autoTilesHtml+'</div>'+
-        '<div class="row" style="gap:8px;margin-top:10px">'+
-          '<button class="btn btn-xs btn-soft" onclick="toggleMergeMode('+p.id+')" style="flex:1">Abbrechen</button>'+
-          '<button class="btn btn-xs btn-go" onclick="mergeSections('+p.id+')" style="flex:1;opacity:'+(mergeSel.length<2?'.4':'1')+'">✓ '+mergeSel.length+' zusammenfassen</button>'+
-        '</div>';
-    }else{
-      grp+='<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">'+
-        '<div onclick="toggleAutoSecs('+p.id+')" style="cursor:pointer;font-size:13px;font-weight:600;flex:1">📐 Einzeltakte ('+autoCount+') <span style="color:var(--muted);font-weight:400">'+(autoSecsOpen?'▲':'▼')+'</span></div>'+
-        (autoCount>1?'<button class="btn btn-xs btn-soft" onclick="toggleMergeMode('+p.id+')" style="width:auto;color:var(--accent2)">🔗 Zusammenfassen</button>':'')+
+  var secsHtml='';
+  if(mergeMode){
+    secsHtml+='<div class="card" style="padding:10px;margin-bottom:10px">'+
+      '<div style="font-size:13px;font-weight:600;margin-bottom:4px">🔗 Takte zusammenfassen</div>'+
+      '<div style="font-size:11px;color:var(--muted);margin-bottom:8px">Tippe die Abschnitte an, die zu einem Block werden sollen – Blöcke und Einzeltakte. Abschnitte dazwischen werden mit einbezogen.</div>'+
+      '<div style="display:flex;flex-wrap:wrap;gap:6px">'+(mergeTiles||'<span style="font-size:12px;color:var(--muted)">Keine Takte.</span>')+'</div>'+
+      '<div class="row" style="gap:8px;margin-top:10px">'+
+        '<button class="btn btn-xs btn-soft" onclick="toggleMergeMode('+p.id+')" style="flex:1">Abbrechen</button>'+
+        '<button class="btn btn-xs btn-go" onclick="mergeSections('+p.id+')" style="flex:1;opacity:'+(mergeSel.length<2?'.4':'1')+'">✓ '+mergeSel.length+' zusammenfassen</button>'+
       '</div>'+
-      (autoSecsOpen?('<div style="margin-top:10px">'+autoCardsHtml+'</div>'):('<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">'+autoTilesHtml+'</div>'));
+    '</div>';
+  }else{
+    secsHtml+=manualHtml;
+    if(autoCount){
+      secsHtml+='<div class="card" style="padding:10px;margin-bottom:10px">'+
+        '<div onclick="toggleAutoSecs('+p.id+')" style="cursor:pointer;font-size:13px;font-weight:600">📐 Einzeltakte ('+autoCount+') <span style="color:var(--muted);font-weight:400">'+(autoSecsOpen?'▲':'▼')+'</span></div>'+
+        (autoSecsOpen?('<div style="margin-top:10px">'+autoCardsHtml+'</div>'):('<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">'+autoTilesHtml+'</div>'))+
+      '</div>';
     }
-    grp+='</div>';
-    secsHtml+=grp;
+    if(rangeCount>1){
+      secsHtml+='<button class="btn btn-xs btn-soft mb12" onclick="toggleMergeMode('+p.id+')" style="width:100%;color:var(--accent2)">🔗 Takte/Blöcke zusammenfassen</button>';
+    }
   }
   
   // Links editor
@@ -1361,6 +1375,7 @@ function editPiece(id){
       '</div>'+
       '<div style="font-size:10px;color:var(--muted);margin-top:6px">Erzeugt Block-Abschnitte (T. 1–4, 5–8 …). Deine manuellen Abschnitte bleiben erhalten; vorhandene Auto-Blöcke werden ersetzt.</div>'+
     '</div>'+
+    '<button class="btn btn-soft btn-sm mb12" onclick="openCut('+p.id+')" style="width:100%;color:var(--accent2)">🖼 Noten schneiden (Zeilen zu Takten)</button>'+
     linkEditor(notenLinks,'Noten','noten','🎵')+
     linkEditor(otherLinks,'Links','link','🔗')+
     '<button class="btn btn-go mt12" onclick="savePieceFields('+p.id+');renderDetail('+p.id+')">✓ Speichern</button>';
@@ -1586,6 +1601,158 @@ function repairSplitHistories(){
     });
   });
   if(changed)save();
+}
+
+// === NOTEN SCHNEIDEN (Zeilen-Ausschnitte je Takt) ===
+// Bilder liegen in IndexedDB; Abschnitte verweisen über s.imgId darauf.
+var IDB=null;
+function idbOpen(){return new Promise(function(res,rej){if(IDB)return res(IDB);try{var r=indexedDB.open('uebezeit-img',1);r.onupgradeneeded=function(e){var db=e.target.result;if(!db.objectStoreNames.contains('images'))db.createObjectStore('images');};r.onsuccess=function(e){IDB=e.target.result;res(IDB);};r.onerror=function(){rej(r.error);};}catch(e){rej(e);}});}
+function idbPut(id,val){return idbOpen().then(function(db){return new Promise(function(res,rej){var tx=db.transaction('images','readwrite');tx.objectStore('images').put(val,id);tx.oncomplete=function(){res();};tx.onerror=function(){rej(tx.error);};});});}
+function idbGet(id){return idbOpen().then(function(db){return new Promise(function(res,rej){var tx=db.transaction('images','readonly');var q=tx.objectStore('images').get(id);q.onsuccess=function(){res(q.result);};q.onerror=function(){rej(q.error);};});});}
+function idbDelete(id){return idbOpen().then(function(db){return new Promise(function(res){var tx=db.transaction('images','readwrite');tx.objectStore('images').delete(id);tx.oncomplete=function(){res();};});});}
+function idbAll(){return idbOpen().then(function(db){return new Promise(function(res){var out={};var tx=db.transaction('images','readonly');var c=tx.objectStore('images').openCursor();c.onsuccess=function(e){var cur=e.target.result;if(cur){out[cur.key]=cur.value;cur.continue();}else res(out);};});});}
+
+var cutPieceId=null,cutPageImg=null,cutNextBar=1,cutLastCount=0,cutPendingCrop=null,cutDragActive=false,cutY0=0,cutY1=0;
+
+function cutFirstUnassignedBar(p){
+  var rs=(p.sections||[]).map(function(s){var r=parseBarRange(s.name,9999);return (r&&r.end<99999)?{start:r.start,img:s.imgId}:null;}).filter(Boolean).sort(function(a,b){return a.start-b.start;});
+  for(var i=0;i<rs.length;i++){if(!rs[i].img)return rs[i].start;}
+  return rs.length?rs[rs.length-1].start:1;
+}
+function openCut(pid){try{savePieceFields(pid);}catch(e){}openCutTool(pid);}
+function openCutTool(pid){
+  try{
+    cutPieceId=pid;cutPageImg=null;cutPendingCrop=null;cutLastCount=0;
+    var p=pieces.find(function(x){return x.id===pid;});
+    if(!p){alert('Stück nicht gefunden.');return;}
+    cutNextBar=cutFirstUnassignedBar(p);
+    renderCutTool();
+  }catch(e){alert('Noten schneiden – Fehler: '+(e&&e.message?e.message:e));}
+}
+function closeCutTool(){var el=document.getElementById('cut-overlay');if(el)el.remove();cutPageImg=null;cutPendingCrop=null;}
+function cutOverlayEl(){var el=document.getElementById('cut-overlay');if(!el){el=document.createElement('div');el.id='cut-overlay';document.body.appendChild(el);}el.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:flex-end;justify-content:center';return el;}
+
+function renderCutTool(){
+  var el=cutOverlayEl();
+  var p=pieces.find(function(x){return x.id===cutPieceId;});
+  if(!p){closeCutTool();return;}
+  var inner='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div class="stitle" style="margin:0">🖼 Noten schneiden</div><button class="btn btn-xs btn-soft" onclick="closeCutTool()" style="width:auto">Fertig</button></div>';
+  if(!cutPageImg){
+    inner+='<div style="font-size:12px;color:var(--muted);margin-bottom:10px">Lade eine Notenseite hoch. Danach ziehst du über jede Notenzeile (von oben nach unten), und die Zeile wird den Takten zugeordnet.</div>';
+    inner+='<label class="btn btn-go" style="display:block;text-align:center">Notenseite hochladen<input type="file" accept="image/*" style="display:none" onchange="cutUpload(this.files[0])"></label>';
+  }else{
+    inner+='<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Zieh über eine Zeile (oben → unten). Nächster Takt: <b>'+cutNextBar+'</b></div>';
+    inner+='<div id="cut-stage" style="position:relative;touch-action:none;user-select:none"><img id="cut-img" src="'+cutPageImg.src+'" style="width:100%;display:block;border-radius:6px;pointer-events:none"><div id="cut-band" style="position:absolute;left:0;right:0;background:rgba(42,157,143,.3);border-top:2px solid var(--accent2);border-bottom:2px solid var(--accent2);display:none;pointer-events:none"></div></div>';
+    var assigned={};
+    (p.sections||[]).forEach(function(s){if(s.imgId){assigned[s.imgId]=assigned[s.imgId]||[];assigned[s.imgId].push(s.name);}});
+    var keys=Object.keys(assigned);
+    if(keys.length){
+      inner+='<div style="font-size:11px;color:var(--muted);margin-top:10px;margin-bottom:4px">Zugeordnet:</div>';
+      keys.forEach(function(id){inner+='<div style="display:flex;align-items:center;gap:6px;font-size:11px;padding:2px 0"><span style="flex:1">'+esc(assigned[id].join(', '))+'</span><button class="rm-btn" onclick="cutUnassign(\''+id+'\')">×</button></div>';});
+    }
+    inner+='<label class="btn btn-xs btn-soft mt8" style="display:block;text-align:center">Andere Seite hochladen<input type="file" accept="image/*" style="display:none" onchange="cutUpload(this.files[0])"></label>';
+  }
+  el.innerHTML='<div style="background:var(--bg);width:100%;max-width:480px;border-radius:16px 16px 0 0;padding:16px;max-height:92vh;overflow:auto">'+inner+'</div>';
+  if(cutPageImg)cutAttachHandlers();
+  if(cutPendingCrop)renderCutConfirm();
+}
+
+function cutUpload(file){
+  if(!file)return;
+  var fr=new FileReader();
+  fr.onload=function(){
+    var img=new Image();
+    img.onload=function(){
+      var maxW=700,scale=Math.min(1,maxW/img.naturalWidth);
+      var c=document.createElement('canvas');c.width=Math.round(img.naturalWidth*scale);c.height=Math.round(img.naturalHeight*scale);
+      c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+      var durl=c.toDataURL('image/jpeg',0.8);
+      var pi=new Image();pi.onload=function(){cutPageImg=pi;cutPendingCrop=null;renderCutTool();};pi.src=durl;
+    };
+    img.src=fr.result;
+  };
+  fr.readAsDataURL(file);
+}
+
+function cutAttachHandlers(){
+  var stage=document.getElementById('cut-stage');var band=document.getElementById('cut-band');if(!stage)return;
+  function ptY(ev){var t=ev.touches&&ev.touches[0]?ev.touches[0]:ev;return t.clientY;}
+  function updateBand(){var r=document.getElementById('cut-img').getBoundingClientRect();var a=Math.min(cutY0,cutY1)-r.top,b=Math.max(cutY0,cutY1)-r.top;band.style.display='block';band.style.top=a+'px';band.style.height=Math.max(0,b-a)+'px';}
+  function down(ev){cutDragActive=true;cutY0=ptY(ev);cutY1=cutY0;updateBand();ev.preventDefault();}
+  function move(ev){if(!cutDragActive)return;cutY1=ptY(ev);updateBand();ev.preventDefault();}
+  function up(ev){if(!cutDragActive)return;cutDragActive=false;cutFinishDrag();ev.preventDefault();}
+  stage.ontouchstart=down;stage.ontouchmove=move;stage.ontouchend=up;
+  stage.onmousedown=down;stage.onmousemove=move;stage.onmouseup=up;
+}
+
+function cutFinishDrag(){
+  var imgEl=document.getElementById('cut-img');if(!imgEl||!cutPageImg)return;
+  var r=imgEl.getBoundingClientRect();
+  var ratio=cutPageImg.naturalHeight/r.height;
+  var a=Math.min(cutY0,cutY1),b=Math.max(cutY0,cutY1);
+  var py0=Math.max(0,(a-r.top)*ratio),py1=Math.min(cutPageImg.naturalHeight,(b-r.top)*ratio);
+  var hh=Math.round(py1-py0);if(hh<6)return;
+  var c=document.createElement('canvas');c.width=cutPageImg.naturalWidth;c.height=hh;
+  c.getContext('2d').drawImage(cutPageImg,0,Math.round(py0),cutPageImg.naturalWidth,hh,0,0,cutPageImg.naturalWidth,hh);
+  cutPendingCrop=c.toDataURL('image/jpeg',0.7);
+  renderCutConfirm();
+}
+
+function renderCutConfirm(){
+  var ov=document.getElementById('cut-overlay');if(!ov||!cutPendingCrop)return;
+  var defEnd=cutNextBar+(cutLastCount>0?cutLastCount-1:0);
+  var c=document.getElementById('cut-confirm');
+  if(!c){c=document.createElement('div');c.id='cut-confirm';c.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:401;display:flex;justify-content:center';ov.appendChild(c);}
+  c.innerHTML='<div style="background:var(--bg);width:100%;max-width:480px;border-top:1px solid var(--border);padding:12px;box-shadow:0 -4px 16px rgba(0,0,0,.2)">'+
+    '<div style="text-align:center;margin-bottom:8px"><img src="'+cutPendingCrop+'" style="max-width:100%;max-height:90px;border:1px solid var(--border);border-radius:4px"></div>'+
+    '<div style="display:flex;align-items:center;gap:6px;justify-content:center;margin-bottom:8px"><span style="font-size:12px">Takt</span><input id="cut-start" type="number" min="1" value="'+cutNextBar+'" style="width:60px;font-size:14px;padding:6px;text-align:center"><span style="font-size:12px">bis</span><input id="cut-end" type="number" min="1" value="'+defEnd+'" style="width:60px;font-size:14px;padding:6px;text-align:center"></div>'+
+    '<div class="row" style="gap:8px"><button class="btn btn-xs btn-soft" onclick="cutCancelPending()" style="flex:1">Verwerfen</button><button class="btn btn-xs btn-go" onclick="cutAssignConfirm()" style="flex:1">✓ Übernehmen</button></div>'+
+  '</div>';
+}
+function cutCancelPending(){cutPendingCrop=null;var c=document.getElementById('cut-confirm');if(c)c.remove();var b=document.getElementById('cut-band');if(b)b.style.display='none';}
+
+function cutAssignConfirm(){
+  var p=pieces.find(function(x){return x.id===cutPieceId;});if(!p||!cutPendingCrop)return;
+  var start=parseInt(document.getElementById('cut-start').value)||cutNextBar;
+  var end=parseInt(document.getElementById('cut-end').value)||start;
+  if(end<start)end=start;
+  var id='img_'+Date.now()+'_'+Math.floor(Math.random()*99999);
+  idbPut(id,cutPendingCrop).then(function(){
+    (p.sections||[]).forEach(function(s){var r=parseBarRange(s.name,9999);if(r&&r.end<99999&&r.start>=start&&r.end<=end)s.imgId=id;});
+    save();
+    cutLastCount=end-start+1;cutNextBar=end+1;cutPendingCrop=null;
+    var c=document.getElementById('cut-confirm');if(c)c.remove();
+    renderCutTool();
+  }).catch(function(){alert('Bild konnte nicht gespeichert werden (Speicher voll?).');});
+}
+function cutUnassign(id){
+  var p=pieces.find(function(x){return x.id===cutPieceId;});if(!p)return;
+  (p.sections||[]).forEach(function(s){if(s.imgId===id)delete s.imgId;});
+  save();idbDelete(id);
+  cutNextBar=cutFirstUnassignedBar(p);
+  renderCutTool();
+}
+
+// Manuelles Bild-Backup (z. B. für Proton Drive)
+function exportImages(){
+  idbAll().then(function(all){
+    var blob=new Blob([JSON.stringify(all)],{type:'application/json'});
+    var a=document.createElement('a');var d=new Date();
+    a.download='uebezeit-noten-'+d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate()+'.json';
+    a.href=URL.createObjectURL(blob);a.click();
+  });
+}
+function importImages(ev){
+  var f=ev.target.files[0];if(!f)return;
+  var fr=new FileReader();
+  fr.onload=function(){
+    var r=document.getElementById('img-import-result');
+    try{var obj=JSON.parse(fr.result);var ids=Object.keys(obj);var n=ids.length,done=0;
+      if(!n){if(r)r.textContent='Keine Bilder in der Datei.';return;}
+      ids.forEach(function(id){idbPut(id,obj[id]).then(function(){done++;if(done===n&&r)r.textContent=n+' Noten-Bilder importiert.';});});
+    }catch(e){if(r)r.textContent='Import fehlgeschlagen.';}
+  };
+  fr.readAsText(f);
 }
 
 function autoSplitSections(pid){
@@ -1896,6 +2063,7 @@ function renderPractice(){
       '<div style="font-size:12px;color:var(--muted)">'+esc(p.cat)+(sectionName?' · '+esc(sectionName):'')+'</div>'+
       (focusInfo?'<button onclick="togglePracticeFocus()" style="font-size:11px;color:var(--accent2);margin-top:4px;cursor:pointer;border:1px solid var(--border);background:var(--surface);border-radius:8px;padding:6px 14px;min-height:36px;font-family:inherit">'+esc(focusInfo)+' ✎</button>':'')+
     '</div>'+
+    '<div id="practice-sheet"></div>'+
     '<div id="practice-focus-edit" style="display:none;margin:8px 0"></div>'+
     '<div style="text-align:center;margin:16px 0">'+
       '<div class="timer-big" id="p-timer" style="'+(practicePaused?'color:var(--muted)':!isRunning?'color:var(--border)':'')+'">'+fmtCountdown()+'</div>'+
@@ -1923,6 +2091,7 @@ function renderPractice(){
     :'<button class="btn btn-xs btn-soft mt8" onclick="togglePracticePlan()" style="width:100%;color:var(--accent2)">📋 Übeplan</button>')+
     '<div id="rounds-display" style="margin-top:8px"></div>';
   updateRoundsDisplay();
+  if(sec&&sec.imgId){idbGet(sec.imgId).then(function(d){var sh=document.getElementById('practice-sheet');if(sh&&d)sh.innerHTML='<img src="'+d+'" style="width:100%;border:1px solid var(--border);border-radius:8px;margin-top:8px"><div style="text-align:center;font-size:11px;color:var(--muted);margin-top:2px">'+esc(sec.name)+'</div>';}).catch(function(){});}
 }
 
 function updatePracticeTimer(){
@@ -3812,12 +3981,19 @@ function renderSettings(){
       '<button class="btn btn-soft mb8" onclick="document.getElementById(\'import-file\').click()">📤 Daten importieren</button>'+
       '<input type="file" id="import-file" accept=".json" style="display:none" onchange="importData(event)">'+
       '<div id="import-result"></div>'+
+      '<div style="border-top:1px solid var(--border);margin:10px 0"></div>'+
+      '<div style="font-size:12px;font-weight:600;margin-bottom:4px">🖼 Noten-Bilder</div>'+
+      '<div style="font-size:11px;color:var(--muted);margin-bottom:8px">Die Noten-Ausschnitte sind <b>nicht</b> im JSON-Backup. Sichere sie separat (z. B. auf Proton Drive).</div>'+
+      '<button class="btn btn-soft mb8" onclick="exportImages()">📥 Noten-Bilder exportieren</button>'+
+      '<button class="btn btn-soft mb8" onclick="document.getElementById(\'import-img-file\').click()">📤 Noten-Bilder importieren</button>'+
+      '<input type="file" id="import-img-file" accept=".json" style="display:none" onchange="importImages(event)">'+
+      '<div id="img-import-result" style="font-size:11px;color:var(--muted)"></div>'+
       '<button class="btn btn-stop mt8" onclick="resetAll()">Komplett-Reset</button>'+
     '</div>'+
     '<button class="btn btn-soft mt12" onclick="nav(\'home\')">← Zurück</button>'+
     '<div style="text-align:center;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">'+
       '<div style="font-size:13px;color:var(--text);font-weight:500">🎸 Übezeit v3.0</div>'+
-      '<div style="font-size:11px;color:var(--muted)">Build 2026-06-23-M</div>'+
+      '<div style="font-size:11px;color:var(--muted)">Build 2026-06-23-R</div>'+
     '</div>';
 }
 
