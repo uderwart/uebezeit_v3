@@ -433,7 +433,7 @@ var DEF_CATS=["Fingerstyle","Fingerstyle Klassik","Picking","Song","Aufwärmen"]
 var CAT_COLORS=["#c76a4a","#2a9d8f","#a4546e","#b07d3a","#6b8193","#7c9070","#c9a84c"];
 
 // === DATEN LADEN ===
-var CATS,pieces,sessions,tempoHist,settings,rewards,lesson,analysisCache;
+var CATS,pieces,sessions,tempoHist,settings,rewards,lesson,analysisCache,parked=[];
 try{
   CATS=JSON.parse(localStorage.getItem("uz-cats"))||[].concat(DEF_CATS);
   pieces=JSON.parse(localStorage.getItem("uz-pieces"))||structuredClone(DEF_PIECES);
@@ -443,6 +443,7 @@ try{
   rewards=JSON.parse(localStorage.getItem("uz-rewards"))||{tiers:{bronze:{reward:'',unlocked:false,celebrated:false},silver:{reward:'',unlocked:false,celebrated:false},gold:{reward:'',unlocked:false,celebrated:false},diamond:{reward:'',unlocked:false,celebrated:false}}};
   lesson=JSON.parse(localStorage.getItem("uz-lesson"))||{nextDate:null,lastLessonDate:null,questions:[],feedback:'',planMinutes:30};
   analysisCache=JSON.parse(localStorage.getItem("uz-analysis")||'{}');
+  parked=JSON.parse(localStorage.getItem("uz-parked")||'[]');
 }catch(e){
   CATS=[].concat(DEF_CATS);
   pieces=structuredClone(DEF_PIECES);
@@ -740,6 +741,7 @@ function renderHome(){
   el.innerHTML=
     recoveryBanner()+
     practiceBanner()+
+    parkedBanner()+
     '<div style="text-align:center;padding:16px 0 8px">'+
       '<div style="font-family:\'DM Serif Display\',serif;font-size:20px;color:var(--text)">'+greeting+'</div>'+
       '<div style="font-size:12px;color:var(--muted);margin-top:4px">'+new Date().toLocaleDateString('de-DE',{weekday:'long',day:'numeric',month:'long'})+'</div>'+
@@ -1918,31 +1920,74 @@ var pomoBreakActive=false,pomoBreakTimer=null,pomoBreakRemaining=0;
 // Metronome
 var audioCtx=null,metroOn=false,metroInt=null,metroBpm=80,metroBt=0;
 
-// Sicherheitsabfrage: eine offene (pausierte/laufende) Übung nicht versehentlich
-// durch den Start eines anderen Stücks verlieren.
-var pendingStartFn=null;
-function needsSwitchConfirm(){return practicing&&practiceStart&&!planActive;}
-function showSwitchConfirm(fn){pendingStartFn=fn;renderSwitchConfirm();}
-function renderSwitchConfirm(){
-  var p=pieces.find(function(x){return x.id===practicePieceId;});
-  var name=p?esc(p.name):(practiceMode==='primetime'?'Prime Time':'die laufende Übung');
-  var el=document.getElementById('switch-confirm');
-  if(!el){el=document.createElement('div');el.id='switch-confirm';document.body.appendChild(el);}
-  el.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px';
-  el.innerHTML='<div style="background:var(--bg);border-radius:14px;max-width:360px;width:100%;padding:18px">'+
-    '<div style="font-size:15px;font-weight:700;margin-bottom:6px">Offene Übung</div>'+
-    '<div style="font-size:13px;color:var(--muted);margin-bottom:14px">Du hast eine offene Übung: <b>'+name+'</b> ('+fmt(practiceElapsed)+' bisher). Startest du jetzt etwas anderes, geht sie samt Zeit verloren.</div>'+
-    '<button class="btn btn-go" onclick="switchResume()" style="width:100%;margin-bottom:8px">▶ '+name+' fortsetzen</button>'+
-    '<button class="btn btn-stop" onclick="switchProceed()" style="width:100%;margin-bottom:8px">Neu starten · '+name+' verwerfen</button>'+
-    '<button class="btn btn-soft" onclick="switchCancel()" style="width:100%">Abbrechen</button>'+
-  '</div>';
+// Parkierte Übungen: mehrere pausierte Übungen nebeneinander, jede eine eigene Session.
+function saveParked(){try{localStorage.setItem("uz-parked",JSON.stringify(parked));}catch(e){}}
+function snapshotLive(){
+  if(!practicePaused&&practiceStart)practiceElapsed=Math.round((Date.now()-practiceStart-totalPausedMs)/1000);
+  return {id:'pk_'+Date.now()+'_'+Math.floor(Math.random()*9999),pieceId:practicePieceId,sectionIdx:practiceSectionIdx,mode:practiceMode,elapsed:practiceElapsed,sessionElapsed:sessionTotalElapsed,rounds:rounds.slice(),tempo:currentTempo,ts:Date.now()};
 }
-function switchCancel(){pendingStartFn=null;var el=document.getElementById('switch-confirm');if(el)el.remove();}
-function switchResume(){pendingStartFn=null;var el=document.getElementById('switch-confirm');if(el)el.remove();resumePractice();}
-function switchProceed(){var fn=pendingStartFn;pendingStartFn=null;var el=document.getElementById('switch-confirm');if(el)el.remove();practicing=false;practiceStart=null;clearPending();if(fn)fn();}
+function parkLive(){
+  if(!(practicing&&practiceStart))return;
+  if(metroOn)mStop();
+  clearInterval(practiceTimer);
+  parked.push(snapshotLive());
+  saveParked();
+  practicing=false;practiceStart=null;practicePaused=false;pauseStart=null;totalPausedMs=0;
+  rounds=[];lastTickTs=null;
+  clearPending();
+}
+function resumeParked(id){
+  if(practicing&&practiceStart)parkLive(); // laufende erst sichern, dann wechseln
+  var idx=parked.findIndex(function(x){return x.id===id;});
+  if(idx<0)return;
+  var s=parked[idx];parked.splice(idx,1);saveParked();
+  practicePieceId=s.pieceId;practiceSectionIdx=(s.sectionIdx==null?-1:s.sectionIdx);
+  practiceMode=s.mode||'ueben';
+  practiceElapsed=s.elapsed||0;sessionTotalElapsed=s.sessionElapsed||s.elapsed||0;
+  rounds=s.rounds||[];currentTempo=s.tempo||currentTempo;
+  totalPausedMs=0;practiceStart=Date.now()-practiceElapsed*1000;
+  practicePaused=true;pauseStart=Date.now();
+  practicing=true;lastTickTs=null;roundStart=Date.now();
+  timeUpShown=(sessionTotalElapsed>=getSessionTargetMin()*60);
+  clearInterval(practiceTimer);practiceTimer=setInterval(practiceTick,1000);
+  savePending();
+  document.querySelectorAll(".view").forEach(function(x){x.classList.remove("on");});
+  document.getElementById("v-practice").classList.add("on");
+  if(practiceMode==='primetime')renderPrimeTime();else renderPractice();
+}
+var discardParkedId=null;
+function askDiscardParked(id){discardParkedId=id;renderHome();}
+function cancelDiscardParked(){discardParkedId=null;renderHome();}
+function discardParked(id){parked=parked.filter(function(x){return x.id!==id;});saveParked();discardParkedId=null;renderHome();}
+function parkedBanner(){
+  if(!parked.length)return '';
+  return parked.slice().sort(function(a,b){return b.ts-a.ts;}).map(function(s){
+    var p=s.pieceId?pieces.find(function(x){return x.id===s.pieceId;}):null;
+    var name=p?esc(p.name):(s.mode==='primetime'?'✨ Prime Time':'(gelöschtes Stück)');
+    var secName='';
+    if(p&&s.sectionIdx>=0&&p.sections&&p.sections[s.sectionIdx])secName=' · '+esc(p.sections[s.sectionIdx].name);
+    var modeIcon=s.mode==='spielen'?'🎭':(s.mode==='primetime'?'✨':'🔧');
+    if(discardParkedId===s.id){
+      return '<div style="padding:10px 14px;background:var(--accent);color:#fff;border-radius:10px;margin-bottom:8px">'+
+        '<div style="font-size:12px;font-weight:600;margin-bottom:8px">'+name+' verwerfen? Die Zeit ('+fmt(s.elapsed||0)+') geht verloren.</div>'+
+        '<div style="display:flex;gap:8px">'+
+          '<button class="btn btn-xs" onclick="discardParked(\''+s.id+'\')" style="flex:1;background:#fff;color:var(--accent);font-weight:700">Ja, verwerfen</button>'+
+          '<button class="btn btn-xs" onclick="cancelDiscardParked()" style="flex:1;background:rgba(255,255,255,.2);color:#fff">Abbrechen</button>'+
+        '</div></div>';
+    }
+    return '<div style="padding:10px 14px;background:var(--accent2);color:#fff;border-radius:10px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:8px">'+
+      '<div onclick="resumeParked(\''+s.id+'\')" style="cursor:pointer;flex:1">'+
+        '<div style="font-size:12px;font-weight:600">⏸ Pausiert · '+modeIcon+' '+name+'</div>'+
+        '<div style="font-size:11px;opacity:.85">'+(p||s.mode==='primetime'?'':'')+fmt(s.elapsed||0)+' geübt'+secName+'</div>'+
+      '</div>'+
+      '<button onclick="resumeParked(\''+s.id+'\')" style="background:#fff;color:var(--accent2);border:none;border-radius:8px;padding:7px 12px;font-size:13px;font-weight:700;cursor:pointer">▶ Weiter</button>'+
+      '<button onclick="askDiscardParked(\''+s.id+'\')" style="background:rgba(255,255,255,.18);color:#fff;border:none;border-radius:8px;padding:7px 10px;font-size:14px;cursor:pointer">✕</button>'+
+    '</div>';
+  }).join('');
+}
 
 function startPracticeFromDetail(pid,si){
-  if(needsSwitchConfirm()){showSwitchConfirm(function(){startPracticeFromDetail(pid,si);});return;}
+  if(practicing&&practiceStart&&!planActive)parkLive();
   var p=pieces.find(function(x){return x.id===pid;});
   if(!p)return;
   var sec=p.sections[si];if(!sec)return;
@@ -1969,7 +2014,7 @@ function startPracticeFromDetail(pid,si){
 }
 
 function startWholepiece(pid){
-  if(needsSwitchConfirm()){showSwitchConfirm(function(){startWholepiece(pid);});return;}
+  if(practicing&&practiceStart&&!planActive)parkLive();
   var p=pieces.find(function(x){return x.id===pid;});
   if(!p)return;
   
@@ -2333,8 +2378,7 @@ function togglePracticePlan(){
 // sichert sie und zeigt auf der Startseite das Banner "Üben pausiert · XY".
 function backFromPractice(){
   if(!practiceStart){stopPractice(true);return;} // noch nichts geübt -> einfach zurück
-  if(!practicePaused){practicePaused=true;pauseStart=Date.now();if(metroOn)mStop();}
-  savePending();
+  parkLive();
   nav('home');
 }
 
@@ -2593,7 +2637,7 @@ function mStop(){clearInterval(metroInt);metroOn=false;metroBt=0;}
 
 // === PRIME TIME ===
 function startPrimeTime(){
-  if(needsSwitchConfirm()){showSwitchConfirm(startPrimeTime);return;}
+  if(practicing&&practiceStart&&!planActive)parkLive();
   practicePieceId=null;
   practiceSectionIdx=0;
   practiceMode='primetime';
@@ -2652,8 +2696,7 @@ function startPrimeTimeTimer(){
 
 function backFromPrimeTime(){
   if(!practiceStart){stopPrimeTime(true);return;}
-  if(!practicePaused){practicePaused=true;pauseStart=Date.now();if(metroOn)mStop();}
-  savePending();
+  parkLive();
   nav('home');
 }
 
@@ -4078,7 +4121,7 @@ function renderSettings(){
     '<button class="btn btn-soft mt12" onclick="nav(\'home\')">← Zurück</button>'+
     '<div style="text-align:center;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">'+
       '<div style="font-size:13px;color:var(--text);font-weight:500">🎸 Übezeit v3.0</div>'+
-      '<div style="font-size:11px;color:var(--muted)">Build 2026-06-23-W</div>'+
+      '<div style="font-size:11px;color:var(--muted)">Build 2026-06-23-X</div>'+
     '</div>';
 }
 
