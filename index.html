@@ -2551,13 +2551,39 @@ function saveEntryEndPlan(){
 }
 
 function cancelRating(){
-  // Go back without saving - discard the entry
-  var pName=pendingEntry?pendingEntry.pieceName:null;
-  pendingEntry=null;
-  if(planActive){resumePlanPiece();return;}
-  clearPending();
-  var lastPiece=pName?pieces.find(function(x){return x.name===pName;}):null;
-  if(lastPiece)showDetail(lastPiece.id);else nav('home');
+  if(planActive){pendingEntry=null;resumePlanPiece();return;}
+  // "Zurück" darf die Übung nicht verlieren: zurück in die pausierte Session.
+  var pe=pendingEntry;
+  var p=pe?pieces.find(function(x){return x.name===pe.pieceName;}):null;
+  if(pe&&p){
+    // Den beim Stop gesetzten Tempo-Punkt zurücknehmen (sonst doppelt beim erneuten Stop)
+    if(pe.mode!=='spielen'&&pe.section&&pe.rounds&&pe.rounds.length){
+      var key=secKey(p.name,pe.section);
+      if(tempoHist[key]&&tempoHist[key].length)tempoHist[key].pop();
+      if(tempoHist[key]&&!tempoHist[key].length)delete tempoHist[key];
+      save();
+    }
+    practicePieceId=p.id;
+    var si=-1;
+    if(pe.section&&pe.section!=='Ganzes Stück'&&p.sections)si=p.sections.findIndex(function(s){return s.name===pe.section;});
+    practiceSectionIdx=(pe.section==='Ganzes Stück')?-1:(si>=0?si:-1);
+    practiceMode=pe.mode||'ueben';
+    practiceElapsed=pe.totalSec||0;
+    rounds=[].concat(pe.rounds||[]);
+    currentTempo=rounds.length?rounds[rounds.length-1].bpm:currentTempo;
+    totalPausedMs=0;
+    practiceStart=Date.now()-practiceElapsed*1000;
+    practicePaused=true;pauseStart=Date.now();
+    practicing=true;lastTickTs=null;roundStart=Date.now();
+    pendingEntry=null;
+    clearInterval(practiceTimer);practiceTimer=setInterval(practiceTick,1000);
+    savePending();
+    document.querySelectorAll(".view").forEach(function(x){x.classList.remove("on");});
+    document.getElementById("v-practice").classList.add("on");
+    renderPractice();
+    return;
+  }
+  pendingEntry=null;clearPending();nav('home');
 }
 
 // === POMODORO ===
@@ -4121,7 +4147,7 @@ function renderSettings(){
     '<button class="btn btn-soft mt12" onclick="nav(\'home\')">← Zurück</button>'+
     '<div style="text-align:center;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">'+
       '<div style="font-size:13px;color:var(--text);font-weight:500">🎸 Übezeit v3.0</div>'+
-      '<div style="font-size:11px;color:var(--muted)">Build 2026-06-23-X</div>'+
+      '<div style="font-size:11px;color:var(--muted)">Build 2026-06-23-Y</div>'+
     '</div>';
 }
 
