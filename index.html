@@ -1755,6 +1755,27 @@ function importImages(ev){
   fr.readAsText(f);
 }
 
+// Große Ansicht eines Noten-Ausschnitts beim Üben (antippbar, Zoomstufen)
+var sheetZoomData=null,sheetZoomLevel=2;
+function openSheetZoom(imgId){idbGet(imgId).then(function(d){if(!d)return;sheetZoomData=d;sheetZoomLevel=2;renderSheetZoom();}).catch(function(){});}
+function setSheetZoom(z){sheetZoomLevel=z;renderSheetZoom();}
+function closeSheetZoom(){var el=document.getElementById('sheet-zoom');if(el)el.remove();sheetZoomData=null;}
+function renderSheetZoom(){
+  if(!sheetZoomData)return;
+  var el=document.getElementById('sheet-zoom');
+  if(!el){el=document.createElement('div');el.id='sheet-zoom';document.body.appendChild(el);}
+  el.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:10000;display:flex;flex-direction:column';
+  var zoomBtns=[1,2,3,4].map(function(z){
+    return '<button onclick="setSheetZoom('+z+')" style="padding:6px 12px;border-radius:8px;border:none;font-size:13px;font-weight:700;cursor:pointer;background:'+(sheetZoomLevel===z?'var(--accent2)':'rgba(255,255,255,.15)')+';color:#fff">'+z+'×</button>';
+  }).join('');
+  el.innerHTML=
+    '<div style="display:flex;justify-content:space-between;align-items:center;padding:12px;gap:8px;flex-shrink:0">'+
+      '<div style="display:flex;gap:6px">'+zoomBtns+'</div>'+
+      '<button onclick="closeSheetZoom()" style="padding:6px 14px;border-radius:8px;border:none;font-size:14px;font-weight:700;cursor:pointer;background:rgba(255,255,255,.15);color:#fff">✕</button>'+
+    '</div>'+
+    '<div style="flex:1;overflow:auto;-webkit-overflow-scrolling:touch;display:flex;align-items:flex-start"><img src="'+sheetZoomData+'" style="width:'+(sheetZoomLevel*100)+'%;max-width:none;display:block"></div>';
+}
+
 function autoSplitSections(pid){
   savePieceFields(pid);
   var p=pieces.find(function(x){return x.id===pid;});if(!p)return;
@@ -2091,7 +2112,7 @@ function renderPractice(){
     :'<button class="btn btn-xs btn-soft mt8" onclick="togglePracticePlan()" style="width:100%;color:var(--accent2)">📋 Übeplan</button>')+
     '<div id="rounds-display" style="margin-top:8px"></div>';
   updateRoundsDisplay();
-  if(sec&&sec.imgId){idbGet(sec.imgId).then(function(d){var sh=document.getElementById('practice-sheet');if(sh&&d)sh.innerHTML='<img src="'+d+'" style="width:100%;border:1px solid var(--border);border-radius:8px;margin-top:8px"><div style="text-align:center;font-size:11px;color:var(--muted);margin-top:2px">'+esc(sec.name)+'</div>';}).catch(function(){});}
+  if(sec&&sec.imgId){idbGet(sec.imgId).then(function(d){var sh=document.getElementById('practice-sheet');if(sh&&d)sh.innerHTML='<img src="'+d+'" onclick="openSheetZoom(\''+sec.imgId+'\')" style="width:100%;border:1px solid var(--border);border-radius:8px;margin-top:8px;cursor:pointer"><div style="text-align:center;font-size:11px;color:var(--muted);margin-top:2px">'+esc(sec.name)+' · 🔍 tippen zum Vergrößern</div>';}).catch(function(){});}
 }
 
 function updatePracticeTimer(){
@@ -3993,7 +4014,7 @@ function renderSettings(){
     '<button class="btn btn-soft mt12" onclick="nav(\'home\')">← Zurück</button>'+
     '<div style="text-align:center;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">'+
       '<div style="font-size:13px;color:var(--text);font-weight:500">🎸 Übezeit v3.0</div>'+
-      '<div style="font-size:11px;color:var(--muted)">Build 2026-06-23-R</div>'+
+      '<div style="font-size:11px;color:var(--muted)">Build 2026-06-23-S</div>'+
     '</div>';
 }
 
