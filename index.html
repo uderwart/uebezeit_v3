@@ -1918,7 +1918,31 @@ var pomoBreakActive=false,pomoBreakTimer=null,pomoBreakRemaining=0;
 // Metronome
 var audioCtx=null,metroOn=false,metroInt=null,metroBpm=80,metroBt=0;
 
+// Sicherheitsabfrage: eine offene (pausierte/laufende) Übung nicht versehentlich
+// durch den Start eines anderen Stücks verlieren.
+var pendingStartFn=null;
+function needsSwitchConfirm(){return practicing&&practiceStart&&!planActive;}
+function showSwitchConfirm(fn){pendingStartFn=fn;renderSwitchConfirm();}
+function renderSwitchConfirm(){
+  var p=pieces.find(function(x){return x.id===practicePieceId;});
+  var name=p?esc(p.name):(practiceMode==='primetime'?'Prime Time':'die laufende Übung');
+  var el=document.getElementById('switch-confirm');
+  if(!el){el=document.createElement('div');el.id='switch-confirm';document.body.appendChild(el);}
+  el.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px';
+  el.innerHTML='<div style="background:var(--bg);border-radius:14px;max-width:360px;width:100%;padding:18px">'+
+    '<div style="font-size:15px;font-weight:700;margin-bottom:6px">Offene Übung</div>'+
+    '<div style="font-size:13px;color:var(--muted);margin-bottom:14px">Du hast eine offene Übung: <b>'+name+'</b> ('+fmt(practiceElapsed)+' bisher). Startest du jetzt etwas anderes, geht sie samt Zeit verloren.</div>'+
+    '<button class="btn btn-go" onclick="switchResume()" style="width:100%;margin-bottom:8px">▶ '+name+' fortsetzen</button>'+
+    '<button class="btn btn-stop" onclick="switchProceed()" style="width:100%;margin-bottom:8px">Neu starten · '+name+' verwerfen</button>'+
+    '<button class="btn btn-soft" onclick="switchCancel()" style="width:100%">Abbrechen</button>'+
+  '</div>';
+}
+function switchCancel(){pendingStartFn=null;var el=document.getElementById('switch-confirm');if(el)el.remove();}
+function switchResume(){pendingStartFn=null;var el=document.getElementById('switch-confirm');if(el)el.remove();resumePractice();}
+function switchProceed(){var fn=pendingStartFn;pendingStartFn=null;var el=document.getElementById('switch-confirm');if(el)el.remove();practicing=false;practiceStart=null;clearPending();if(fn)fn();}
+
 function startPracticeFromDetail(pid,si){
+  if(needsSwitchConfirm()){showSwitchConfirm(function(){startPracticeFromDetail(pid,si);});return;}
   var p=pieces.find(function(x){return x.id===pid;});
   if(!p)return;
   var sec=p.sections[si];if(!sec)return;
@@ -1945,6 +1969,7 @@ function startPracticeFromDetail(pid,si){
 }
 
 function startWholepiece(pid){
+  if(needsSwitchConfirm()){showSwitchConfirm(function(){startWholepiece(pid);});return;}
   var p=pieces.find(function(x){return x.id===pid;});
   if(!p)return;
   
@@ -2096,7 +2121,7 @@ function renderPractice(){
   }).join(' · ');
   
   el.innerHTML=
-    '<button class="btn btn-xs btn-soft mb8" onclick="stopPractice(true)" style="width:auto">← Zurück</button>'+
+    '<button class="btn btn-xs btn-soft mb8" onclick="backFromPractice()" style="width:auto">← Zurück</button>'+
     '<div style="text-align:center">'+
       '<div style="display:flex;justify-content:center;gap:6px;margin-bottom:4px">'+
         '<button onclick="switchPracticeMode(\'ueben\')" style="padding:4px 12px;border-radius:8px;font-size:11px;font-weight:700;border:none;cursor:pointer;background:'+(!isPlay?'var(--accent2)':'var(--surface2)')+';color:'+(!isPlay?'#fff':'var(--muted)')+'">🔧 Üben</button>'+
@@ -2304,6 +2329,15 @@ function togglePracticePlan(){
 }
 
 // === STOP PRACTICE ===
+// Pausieren statt abbrechen: "Zurück" während des Übens pausiert die Session,
+// sichert sie und zeigt auf der Startseite das Banner "Üben pausiert · XY".
+function backFromPractice(){
+  if(!practiceStart){stopPractice(true);return;} // noch nichts geübt -> einfach zurück
+  if(!practicePaused){practicePaused=true;pauseStart=Date.now();if(metroOn)mStop();}
+  savePending();
+  nav('home');
+}
+
 function stopPractice(abort){
   clearInterval(practiceTimer);
   if(metroOn)mStop();
@@ -2559,6 +2593,7 @@ function mStop(){clearInterval(metroInt);metroOn=false;metroBt=0;}
 
 // === PRIME TIME ===
 function startPrimeTime(){
+  if(needsSwitchConfirm()){showSwitchConfirm(startPrimeTime);return;}
   practicePieceId=null;
   practiceSectionIdx=0;
   practiceMode='primetime';
@@ -2578,7 +2613,7 @@ function renderPrimeTime(){
   var isRunning=!!practiceStart;
   
   el.innerHTML=
-    '<button class="btn btn-xs btn-soft mb8" onclick="stopPrimeTime(true)" style="width:auto">← Zurück</button>'+
+    '<button class="btn btn-xs btn-soft mb8" onclick="backFromPrimeTime()" style="width:auto">← Zurück</button>'+
     '<div style="text-align:center">'+
       '<div style="font-size:32px;margin-bottom:4px">✨</div>'+
       '<div style="font-family:\'DM Serif Display\',serif;font-size:22px">Prime Time</div>'+
@@ -2613,6 +2648,13 @@ function startPrimeTimeTimer(){
   practiceTimer=setInterval(practiceTick,1000);
   savePending();
   renderPrimeTime();
+}
+
+function backFromPrimeTime(){
+  if(!practiceStart){stopPrimeTime(true);return;}
+  if(!practicePaused){practicePaused=true;pauseStart=Date.now();if(metroOn)mStop();}
+  savePending();
+  nav('home');
 }
 
 function stopPrimeTime(abort){
@@ -4036,7 +4078,7 @@ function renderSettings(){
     '<button class="btn btn-soft mt12" onclick="nav(\'home\')">← Zurück</button>'+
     '<div style="text-align:center;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">'+
       '<div style="font-size:13px;color:var(--text);font-weight:500">🎸 Übezeit v3.0</div>'+
-      '<div style="font-size:11px;color:var(--muted)">Build 2026-06-23-U</div>'+
+      '<div style="font-size:11px;color:var(--muted)">Build 2026-06-23-W</div>'+
     '</div>';
 }
 
