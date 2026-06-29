@@ -916,7 +916,7 @@ function renderDetail(id){
 // === COMBINED TEMPO CHART ===
 function buildOverallTempoChart(p){
   // Overall = the slowest section over time (how fast the whole piece can be played).
-  var secNames=(p.sections||[]).filter(function(s){return getSecHist(p.name,s.name).length>=2;}).map(function(s){return s.name;});
+  var secNames=(p.sections||[]).filter(function(s){return !s.extraRange&&getSecHist(p.name,s.name).length>=2;}).map(function(s){return s.name;});
   if(!secNames.length)return '';
   var hist=mergeTempoHistories(p.name,secNames).slice(-60);
   if(!hist.length)return '';
@@ -1316,13 +1316,14 @@ function editPiece(id){
   var secsHtml='';
   if(mergeMode){
     secsHtml+='<div class="card" style="padding:10px;margin-bottom:10px">'+
-      '<div style="font-size:13px;font-weight:600;margin-bottom:4px">🔗 Takte zusammenfassen</div>'+
-      '<div style="font-size:11px;color:var(--muted);margin-bottom:8px">Tippe die Abschnitte an, die zu einem Block werden sollen – Blöcke und Einzeltakte. Abschnitte dazwischen werden mit einbezogen.</div>'+
+      '<div style="font-size:13px;font-weight:600;margin-bottom:4px">🎯 Takte auswählen</div>'+
+      '<div style="font-size:11px;color:var(--muted);margin-bottom:8px">Tippe die Abschnitte an (Blöcke und Einzeltakte). Dann entweder zu einem Block zusammenfassen <b>oder</b> als zusätzlichen Übe-Bereich anlegen – die Originale bleiben dann erhalten.</div>'+
       '<div style="display:flex;flex-wrap:wrap;gap:6px">'+(mergeTiles||'<span style="font-size:12px;color:var(--muted)">Keine Takte.</span>')+'</div>'+
       '<div class="row" style="gap:8px;margin-top:10px">'+
-        '<button class="btn btn-xs btn-soft" onclick="toggleMergeMode('+p.id+')" style="flex:1">Abbrechen</button>'+
-        '<button class="btn btn-xs btn-go" onclick="mergeSections('+p.id+')" style="flex:1;opacity:'+(mergeSel.length<2?'.4':'1')+'">✓ '+mergeSel.length+' zusammenfassen</button>'+
+        '<button class="btn btn-xs btn-go" onclick="mergeSections('+p.id+')" style="flex:1;opacity:'+(mergeSel.length<2?'.4':'1')+'">🔗 Zusammenfassen</button>'+
+        '<button class="btn btn-xs btn-soft" onclick="addRangeFromSelection('+p.id+')" style="flex:1;color:var(--accent2);opacity:'+(mergeSel.length<1?'.4':'1')+'">+ Neuer Bereich</button>'+
       '</div>'+
+      '<button class="btn btn-xs btn-soft mt8" onclick="toggleMergeMode('+p.id+')" style="width:100%">Abbrechen</button>'+
     '</div>';
   }else{
     secsHtml+=manualHtml;
@@ -1332,8 +1333,8 @@ function editPiece(id){
         (autoSecsOpen?('<div style="margin-top:10px">'+autoCardsHtml+'</div>'):('<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">'+autoTilesHtml+'</div>'))+
       '</div>';
     }
-    if(rangeCount>1){
-      secsHtml+='<button class="btn btn-xs btn-soft mb12" onclick="toggleMergeMode('+p.id+')" style="width:100%;color:var(--accent2)">🔗 Takte/Blöcke zusammenfassen</button>';
+    if(rangeCount>0){
+      secsHtml+='<button class="btn btn-xs btn-soft mb12" onclick="toggleMergeMode('+p.id+')" style="width:100%;color:var(--accent2)">🎯 Bereiche bilden (zusammenfassen / neuer Übe-Bereich)</button>';
     }
   }
   
@@ -1517,6 +1518,34 @@ function mergeTempoHistories(pName,secNames){
 
 function mergeSections(pid){
   var p=pieces.find(function(x){return x.id===pid;});if(!p)return;
+  // (addRangeFromSelection unten definiert)
+  return mergeSectionsImpl(pid,p);
+}
+// Neuen, zusätzlichen Übe-Bereich aus der Auswahl bilden – Originale bleiben erhalten.
+function addRangeFromSelection(pid){
+  var p=pieces.find(function(x){return x.id===pid;});if(!p)return;
+  if(mergeSel.length<1)return;
+  var selRanges=[];
+  mergeSel.forEach(function(si){var s=p.sections[si];if(!s)return;var r=parseBarRange(s.name,9999);if(r)selRanges.push(r);});
+  if(!selRanges.length){mergeMode=false;mergeSel=[];editPiece(pid);return;}
+  var minStart=selRanges.reduce(function(a,r){return Math.min(a,r.start);},1e9);
+  var maxEnd=selRanges.reduce(function(a,r){return Math.max(a,r.end);},0);
+  var nm=(minStart===maxEnd?('T. '+minStart):('T. '+minStart+'–'+maxEnd));
+  if((p.sections||[]).some(function(s){return s.name===nm;})){mergeMode=false;mergeSel=[];editPiece(pid);return;}
+  var covered=[];
+  (p.sections||[]).forEach(function(s){var r=parseBarRange(s.name,9999);if(r&&r.start>=minStart&&r.end<=maxEnd)covered.push(s);});
+  var starts=covered.map(function(s){return s.startBpm||0;}).filter(function(v){return v>0;});
+  var targets=covered.map(function(s){return s.targetBpm||0;}).filter(function(v){return v>0;});
+  var lasts=covered.map(function(s){return getSecLast(p.name,s.name);}).filter(function(v){return v>0;});
+  var newStart=lasts.length?Math.min.apply(null,lasts):(starts.length?Math.min.apply(null,starts):0);
+  var newTarget=targets.length?Math.max.apply(null,targets):0;
+  var maxId=p.sections.reduce(function(a,s){return Math.max(a,s.id||0);},0);
+  p.sections.push({id:maxId+1,name:nm,mode:'ueben',startBpm:newStart,targetBpm:newTarget,focus:['sauberkeit'],extraRange:true});
+  mergeMode=false;mergeSel=[];
+  save();editPiece(pid);
+}
+
+function mergeSectionsImpl(pid,p){
   if(mergeSel.length<2){mergeMode=false;mergeSel=[];editPiece(pid);return;}
   // Ranges of the selected bars
   var selRanges=[];
@@ -1845,6 +1874,7 @@ function autoSplitSections(pid){
   // sections (e.g. "1-Ende", "Ganzes Stück") and any non-numeric names.
   p.sections=p.sections.filter(function(s){
     if(s.auto)return true;
+    if(s.extraRange)return true;
     var r=parseBarRange(s.name,total);
     if(!r)return true;
     var coveredSub=(r.start>=1&&r.end<=total&&(r.start>1||r.end<total));
@@ -4159,7 +4189,7 @@ function renderSettings(){
     '<button class="btn btn-soft mt12" onclick="nav(\'home\')">← Zurück</button>'+
     '<div style="text-align:center;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">'+
       '<div style="font-size:13px;color:var(--text);font-weight:500">🎸 Übezeit v3.0</div>'+
-      '<div style="font-size:11px;color:var(--muted)">Build 2026-06-24-D</div>'+
+      '<div style="font-size:11px;color:var(--muted)">Build 2026-06-24-E</div>'+
     '</div>';
 }
 
