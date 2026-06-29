@@ -1195,7 +1195,7 @@ function analyzePiece(id){
   fetch('https://api.anthropic.com/v1/messages',{
     method:'POST',
     headers:{'Content-Type':'application/json','x-api-key':settings.apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-    body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:300,messages:[{role:'user',content:prompt}]})
+    body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:300,messages:[{role:'user',content:prompt}]})
   }).then(function(r){return r.json();}).then(function(data){
     var text=(data.content&&data.content[0])?data.content[0].text:'Analyse fehlgeschlagen.';
     analysisCache[p.name]={text:text,date:new Date().toISOString()};
@@ -3213,7 +3213,7 @@ function generateUebeplan(){
   fetch('https://api.anthropic.com/v1/messages',{
     method:'POST',
     headers:{'Content-Type':'application/json','x-api-key':settings.apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-    body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:500,messages:[{role:'user',content:prompt}]})
+    body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:500,messages:[{role:'user',content:prompt}]})
   }).then(function(r){return r.json();}).then(function(data){
     if(data&&data.error){
       if(btn)btn.textContent='🤖 Übeplan erstellen';
@@ -4159,7 +4159,7 @@ function renderSettings(){
     '<button class="btn btn-soft mt12" onclick="nav(\'home\')">← Zurück</button>'+
     '<div style="text-align:center;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">'+
       '<div style="font-size:13px;color:var(--text);font-weight:500">🎸 Übezeit v3.0</div>'+
-      '<div style="font-size:11px;color:var(--muted)">Build 2026-06-24-C</div>'+
+      '<div style="font-size:11px;color:var(--muted)">Build 2026-06-24-D</div>'+
     '</div>';
 }
 
