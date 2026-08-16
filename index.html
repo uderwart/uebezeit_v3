@@ -425,7 +425,7 @@ var FOCUS_OPTIONS=[
 
 // === DEFAULT STÜCKE ===
 var DEF_PIECES=[
-  {id:1,name:"Erstes Stück",cat:"Fingerstyle",note:"",status:"aktiv",links:[],sections:[{id:1,name:"1-Ende",mode:"ueben",startBpm:60,targetBpm:80,focus:["sauberkeit"]}]}
+  {id:1,name:"Erstes Stück",cat:"Fingerstyle",note:"",status:"aktiv",hw:false,links:[],sections:[{id:1,name:"1-Ende",mode:"ueben",startBpm:60,targetBpm:80,focus:["sauberkeit"]}]}
 ];
 
 // === DEFAULT KATEGORIEN ===
@@ -463,6 +463,8 @@ try{
   pieces=pieces.map(function(p){
     p.links=p.links||[];
     p.status=p.status||'aktiv';
+    if(p.status==='hausaufgabe'){p.status='aktiv';p.hw=true;} // Hausaufgabe ist jetzt ein eigener Schalter
+    if(p.hw===undefined)p.hw=false;
     if(!p.sections||!p.sections.length){
       p.sections=[{id:1,name:p.note||'1-Ende',mode:'ueben',startBpm:p.startBpm||0,targetBpm:p.targetBpm||0,focus:['sauberkeit']}];
     }
@@ -721,16 +723,9 @@ function renderHome(){
   var weekMin=sessions.filter(function(s){return new Date(s.date)>=weekStart;}).reduce(function(a,s){return a+Math.round(s.totalSec/60);},0);
   var weekPct=Math.min(100,Math.round(weekMin/settings.weeklyMin*100));
   
-  // Sort pieces: hausaufgabe first, then aktiv, ruhend hidden
-  var hwPieces=pieces.filter(function(p){return p.status==='hausaufgabe';});
-  var activePieces=pieces.filter(function(p){return p.status==='aktiv';});
-  var ruhenPieces=pieces.filter(function(p){return p.status==='ruhend';});
-  
-  var hwHtml='';
-  if(hwPieces.length){
-    hwHtml='<div class="stitle mt12">Hausaufgaben</div>';
-    hwPieces.forEach(function(p){hwHtml+=pieceCard(p);});
-  }
+  // Active pieces (homework ones flagged with ⭐ and sorted first). Ruhend bleibt versteckt.
+  var activePieces=pieces.filter(function(p){return p.status!=='ruhend';});
+  activePieces.sort(function(a,b){return (b.hw?1:0)-(a.hw?1:0);});
   
   var activeHtml='';
   if(activePieces.length){
@@ -754,8 +749,8 @@ function renderHome(){
     buildHeatmap()+
     renderUebeplanCards()+
     '<button class="btn mt12" onclick="startPrimeTime()" style="width:100%;background:var(--accent-soft);color:var(--accent);border:1px solid var(--accent);font-size:15px;padding:14px"><span style="font-size:18px">✨</span> Prime Time</button>'+
-    hwHtml+activeHtml+
-    (hwPieces.length+activePieces.length===0?'<div class="empty"><div style="font-size:28px;margin-bottom:8px">🎸</div>Noch keine Stücke.<br>Lege dein erstes Stück an!</div>':'')+
+    activeHtml+
+    (activePieces.length===0?'<div class="empty"><div style="font-size:28px;margin-bottom:8px">🎸</div>Noch keine Stücke.<br>Lege dein erstes Stück an!</div>':'')+
     '<button class="btn btn-go mt12" onclick="addPieceUI()">+ Neues Stück</button>'+
     '<button class="btn btn-soft mt8" onclick="nav(\'settings\')">⚙ Einstellungen</button>';
 }
@@ -781,7 +776,7 @@ function pieceCard(p){
   var badges='';
   if(pr.ready)badges+=' <span class="badge badge-done">Auftrittssicher</span>';
   else if(pr.total>0)badges+=' <span class="badge badge-soft">'+pr.streak+'/3</span>';
-  if(p.status==='hausaufgabe')badges+=' <span class="badge" style="background:var(--accent-soft);color:var(--accent)">Hausaufgabe</span>';
+  if(p.hw)badges+=' <span class="badge" style="background:var(--accent-soft);color:var(--accent)">⭐ Hausaufgabe</span>';
   
   var infoText='';
   if(lastText)infoText+=lastText;
@@ -809,7 +804,7 @@ function renderPiecesEditor(){
 
 function addPieceUI(){
   var maxId=pieces.reduce(function(a,p){return Math.max(a,p.id);},0);
-  pieces.push({id:maxId+1,name:'Neues Stück',cat:CATS[0]||'Fingerstyle',note:'',status:'aktiv',links:[],sections:[{id:1,name:'1-Ende',mode:'ueben',startBpm:0,targetBpm:0,focus:['sauberkeit']}]});
+  pieces.push({id:maxId+1,name:'Neues Stück',cat:CATS[0]||'Fingerstyle',note:'',status:'aktiv',hw:false,links:[],sections:[{id:1,name:'1-Ende',mode:'ueben',startBpm:0,targetBpm:0,focus:['sauberkeit']}]});
   save();
   showDetail(maxId+1);
 }
@@ -821,12 +816,13 @@ function renderDetail(id){
   var secs=p.sections||[];
   var pr=isPerformanceReady(p.name);
   
-  // Status buttons
-  var statusBtns=['aktiv','hausaufgabe','ruhend'].map(function(s){
-    var label=s==='aktiv'?'Aktiv':s==='hausaufgabe'?'Hausaufgabe':'Ruhend';
+  // Status (aktiv/ruhend) + separater Hausaufgabe-Schalter
+  var statusBtns=['aktiv','ruhend'].map(function(s){
+    var label=s==='aktiv'?'Aktiv':'Ruhend';
     var active=p.status===s;
     return '<button class="btn btn-xs '+(active?'btn-primary':'btn-soft')+'" onclick="setPieceStatus('+p.id+',\''+s+'\')">'+label+'</button>';
   }).join('');
+  statusBtns+='<button class="btn btn-xs '+(p.hw?'btn-go':'btn-soft')+'" onclick="toggleHomework('+p.id+')">'+(p.hw?'⭐ Hausaufgabe':'☆ Hausaufgabe')+'</button>';
   
   // Sections
   var secsHtml='';
@@ -890,7 +886,7 @@ function renderDetail(id){
           '<div><div class="stitle" style="margin:0">🤖 Analyse</div><div style="font-size:10px;color:var(--muted);margin-top:2px">'+aDateStr+'</div></div>'+
           '<span style="font-size:12px;color:var(--muted)" id="ai-arrow-'+p.id+'">▼</span>'+
         '</div>'+
-        '<div id="ai-body-'+p.id+'" style="display:none;padding:0 12px 12px;border-top:1px solid var(--border)"><div style="font-size:13px;line-height:1.5;margin-top:8px">'+esc(cached.text).replace(/\n/g,'<br>')+'</div></div>'+
+        '<div id="ai-body-'+p.id+'" style="display:none;padding:0 12px 12px;border-top:1px solid var(--border)"><div style="font-size:13px;line-height:1.5;margin-top:8px">'+mdLite(cached.text)+'</div></div>'+
       '</div>'+
       '<button class="btn btn-xs btn-soft mt8" onclick="analyzePiece('+p.id+')" id="ai-btn-'+p.id+'">Neue Analyse</button><div id="ai-result-'+p.id+'"></div></div>';
   }
@@ -1190,18 +1186,19 @@ function analyzePiece(id){
     return (sp.mode||'ueben')+', '+(sp.section||'?')+', '+(sp.techRating?'Sauberkeit:'+sp.techRating:'')+' '+(sp.exprRating?'Ausdruck:'+sp.exprRating:'')+' '+(sp.errorFree!=null?'Fehlerfrei:'+(sp.errorFree?'Ja':'Nein'):'');
   }).join('\n');
   
-  var prompt='Stück: '+p.name+'\nKategorie: '+p.cat+'\nAuftrittssicher: '+(pr.ready?'Ja':'Nein ('+pr.streak+'/3)')+'\n\nAbschnitte:\n'+secs+'\n\nLetzte 10 Einträge:\n'+last10+'\n\nGib 4-5 Sätze konkrete Handlungsempfehlung auf Deutsch. Was sollte als nächstes geübt werden? Welcher Abschnitt braucht Aufmerksamkeit? Sei motivierend aber ehrlich.';
+  var prompt='Stück: '+p.name+'\nKategorie: '+p.cat+'\nAuftrittssicher: '+(pr.ready?'Ja':'Nein ('+pr.streak+'/3)')+'\n\nAbschnitte:\n'+secs+'\n\nLetzte 10 Einträge:\n'+last10+'\n\nGib 4-5 Sätze konkrete Handlungsempfehlung auf Deutsch. Was sollte als nächstes geübt werden? Welcher Abschnitt braucht Aufmerksamkeit? Sei motivierend aber ehrlich. Antworte in einfachem Fließtext OHNE Markdown (keine #, keine **, keine Aufzählungszeichen) und halte dich kurz, damit die Antwort vollständig passt.';
   
   fetch('https://api.anthropic.com/v1/messages',{
     method:'POST',
     headers:{'Content-Type':'application/json','x-api-key':settings.apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-    body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:300,messages:[{role:'user',content:prompt}]})
+    body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:700,messages:[{role:'user',content:prompt}]})
   }).then(function(r){return r.json();}).then(function(data){
+    if(data&&data.error){if(btn)btn.textContent='🤖 Analyse & Empfehlung';if(result)result.innerHTML='<div class="card mt8" style="font-size:12px;color:#c0392b">API-Fehler: '+esc(data.error.message||'')+'</div>';return;}
     var text=(data.content&&data.content[0])?data.content[0].text:'Analyse fehlgeschlagen.';
     analysisCache[p.name]={text:text,date:new Date().toISOString()};
     try{localStorage.setItem('uz-analysis',JSON.stringify(analysisCache));}catch(e){}
     if(btn)btn.textContent='🤖 Neue Analyse';
-    if(result)result.innerHTML='<div class="card mt8" style="border-left:3px solid var(--accent2)"><div style="font-size:13px;line-height:1.5">'+esc(text).replace(/\n/g,'<br>')+'</div></div>';
+    if(result)result.innerHTML='<div class="card mt8" style="border-left:3px solid var(--accent2)"><div style="font-size:13px;line-height:1.5">'+mdLite(text)+'</div></div>';
   }).catch(function(e){
     if(btn)btn.textContent='🤖 Analyse & Empfehlung';
     if(result)result.innerHTML='<div class="card mt8" style="font-size:12px;color:var(--muted)">Analyse fehlgeschlagen: '+e.message+'</div>';
@@ -1234,6 +1231,10 @@ function renderPieceLinks(p){
 function setPieceStatus(id,status){
   var p=pieces.find(function(x){return x.id===id;});
   if(p){p.status=status;save();renderDetail(id);}
+}
+function toggleHomework(id){
+  var p=pieces.find(function(x){return x.id===id;});
+  if(p){p.hw=!p.hw;if(p.hw&&p.status==='ruhend')p.status='aktiv';save();renderDetail(id);}
 }
 
 // === PIECE EDITOR ===
@@ -2857,7 +2858,7 @@ function renderLesson(){
   }
   
   // Homework pieces (status=hausaufgabe)
-  var hwPieces=pieces.filter(function(p){return p.status==='hausaufgabe';});
+  var hwPieces=pieces.filter(function(p){return p.hw&&p.status!=='ruhend';});
   var hwHtml='';
   if(hwPieces.length){
     var doneCount=0;
@@ -3052,7 +3053,7 @@ function toggleArchive(idx){
 
 var finishConfirmed=false;
 function confirmFinishLesson(){
-  var hwPieces=pieces.filter(function(p){return p.status==='hausaufgabe';});
+  var hwPieces=pieces.filter(function(p){return p.hw&&p.status!=='ruhend';});
   if(!hwPieces.length){
     finishLesson();
     return;
@@ -3065,12 +3066,12 @@ function confirmFinishLesson(){
     '<div style="font-size:13px;color:var(--muted);margin-bottom:12px">Was passiert mit den Hausaufgaben?</div>';
   
   hwPieces.forEach(function(p){
-    html+='<div class="card" style="padding:12px">'+
+    html+='<div class="card" style="padding:12px" data-fin="'+p.id+'">'+
       '<div style="font-size:13px;font-weight:600;margin-bottom:8px">'+esc(p.name)+'</div>'+
       '<div style="display:flex;gap:6px">'+
-        '<button class="btn btn-xs btn-primary" onclick="setFinishStatus('+p.id+',\'hausaufgabe\',this)" style="flex:1">Weiter üben</button>'+
-        '<button class="btn btn-xs btn-soft" onclick="setFinishStatus('+p.id+',\'aktiv\',this)" style="flex:1">Fertig</button>'+
-        '<button class="btn btn-xs btn-soft" onclick="setFinishStatus('+p.id+',\'ruhend\',this)" style="flex:1">Ruhend</button>'+
+        '<button class="btn btn-xs btn-primary" onclick="setFinishChoice('+p.id+',\'keep\',this)" style="flex:1">Bleibt Hausaufgabe</button>'+
+        '<button class="btn btn-xs btn-soft" onclick="setFinishChoice('+p.id+',\'done\',this)" style="flex:1">Erledigt</button>'+
+        '<button class="btn btn-xs btn-soft" onclick="setFinishChoice('+p.id+',\'rest\',this)" style="flex:1">Ruhend</button>'+
       '</div>'+
     '</div>';
   });
@@ -3080,19 +3081,19 @@ function confirmFinishLesson(){
   el.innerHTML=html;
 }
 
-function setFinishStatus(pid,status,btn){
+function setFinishChoice(pid,choice,btn){
   var p=pieces.find(function(x){return x.id===pid;});
-  if(p)p.status=status;
-  save();
-  // Update button styles in parent
+  if(p){
+    if(choice==='keep'){p.hw=true;if(p.status==='ruhend')p.status='aktiv';}
+    else if(choice==='done'){p.hw=false;}
+    else if(choice==='rest'){p.hw=false;p.status='ruhend';}
+    save();
+  }
   var parent=btn.parentElement;
   if(parent){
     var btns=parent.querySelectorAll('button');
-    btns.forEach(function(b,i){
-      var s=['hausaufgabe','aktiv','ruhend'][i];
-      if(s===status){b.className='btn btn-xs btn-primary';}
-      else{b.className='btn btn-xs btn-soft';}
-    });
+    var order=['keep','done','rest'];
+    btns.forEach(function(b,i){b.className='btn btn-xs '+(order[i]===choice?'btn-primary':'btn-soft');});
   }
 }
 
@@ -3118,7 +3119,7 @@ function finishLesson(){
   sinceSess.forEach(function(s){(s.pieces||[]).forEach(function(sp){if(sincePieces.indexOf(sp.name)<0)sincePieces.push(sp.name);});});
   
   // Homework status
-  var hwStatus=pieces.filter(function(p){return p.status==='hausaufgabe';}).map(function(p){
+  var hwStatus=pieces.filter(function(p){return p.hw;}).map(function(p){
     var secs=(p.sections||[]);
     var done=secs.every(function(s){return !s.targetBpm||getSecLast(p.name,s.name)>=s.targetBpm;});
     return {name:p.name,done:done};
@@ -3210,7 +3211,7 @@ function generateUebeplan(){
     var secs=(p.sections||[]).map(function(s,si){
       return s.name+' (Index '+si+'): Ist '+getSecLast(p.name,s.name)+'/Ziel '+s.targetBpm+', Modus: '+s.mode;
     }).join(', ');
-    return p.name+' (ID:'+p.id+', '+p.cat+', '+p.status+'): '+secs;
+    return p.name+' (ID:'+p.id+', '+p.cat+', '+p.status+(p.hw?', HAUSAUFGABE':'')+'): '+secs;
   }).join('\n');
   
   var weekStart=getMonday();
@@ -3230,7 +3231,7 @@ function generateUebeplan(){
     'REGELN:\n'+
     '1. NUR Stücke aus der Liste oben verwenden! Erfinde KEINE neuen Stücke.\n'+
     '2. Verwende die exakte pieceId und den exakten Stücknamen aus der Liste.\n'+
-    '3. "hausaufgabe" Stücke: 60-70% der Zeit\n'+
+    '3. Stücke mit "HAUSAUFGABE": 60-70% der Zeit\n'+
     '4. Max 10-15 Min pro Eintrag\n'+
     '5. Aufwärmen am Anfang mit leichtem Stück (5 Min)\n'+
     '6. Schwieriges in die Mitte\n'+
@@ -4189,7 +4190,7 @@ function renderSettings(){
     '<button class="btn btn-soft mt12" onclick="nav(\'home\')">← Zurück</button>'+
     '<div style="text-align:center;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">'+
       '<div style="font-size:13px;color:var(--text);font-weight:500">🎸 Übezeit v3.0</div>'+
-      '<div style="font-size:11px;color:var(--muted)">Build 2026-06-24-F</div>'+
+      '<div style="font-size:11px;color:var(--muted)">Build 2026-06-24-H</div>'+
     '</div>';
 }
 
@@ -4254,6 +4255,8 @@ function importData(event){
         pieces=data.pieces.map(function(p){
           p.links=p.links||[];
           p.status=p.status||'aktiv';
+          if(p.status==='hausaufgabe'){p.status='aktiv';p.hw=true;}
+          if(p.hw===undefined)p.hw=false;
           if(!p.sections||!p.sections.length){
             // v2: sections might exist but without mode/focus
             // or might not exist at all (very old format)
@@ -4335,6 +4338,15 @@ function resetAll(){
 
 // === HELPERS ===
 function esc(s){var d=document.createElement("div");d.textContent=s;return d.innerHTML;}
+// Light markdown: escape HTML, **bold**, strip leading #, newlines -> <br>
+function mdLite(s){
+  var t=esc(s==null?'':String(s));
+  t=t.replace(/^\s*#{1,6}\s*/gm,'');           // headers
+  t=t.replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>'); // bold
+  t=t.replace(/(^|\n)\s*[-*]\s+/g,'$1• ');      // bullets -> •
+  t=t.replace(/\n/g,'<br>');
+  return t;
+}
 function fmt(s){s=Math.floor(s);return Math.floor(s/60)+":"+String(s%60).padStart(2,"0");}
 function fmtDate(iso){var d=new Date(iso);return d.toLocaleDateString("de-DE",{weekday:"short",day:"numeric",month:"short"})+" · "+d.toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"});}
 function getMonday(d){var dt=new Date(d||new Date());var day=dt.getDay();var diff=day===0?6:day-1;dt.setDate(dt.getDate()-diff);dt.setHours(0,0,0,0);return dt;}
