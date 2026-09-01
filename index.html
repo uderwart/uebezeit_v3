@@ -402,6 +402,7 @@ input:focus, select:focus, textarea:focus {
   <div class="view" id="v-log"></div>
   <div class="view" id="v-detail"></div>
   <div class="view" id="v-practice"></div>
+  <div class="view" id="v-metro"></div>
   <div class="view" id="v-settings"></div>
 
 </div>
@@ -560,10 +561,12 @@ function nav(v){
     b.classList.toggle("on",["home","lesson","stats","log"][i]===v);
   });
   // Render
+  if(metroOn&&v!=='metro'&&v!=='practice')mStop();
   if(v==="home") renderHome();
   if(v==="lesson") renderLesson();
   if(v==="stats") renderStats();
   if(v==="log") renderLog();
+  if(v==="metro") renderMetro();
   if(v==="settings") renderSettings();
 }
 
@@ -752,6 +755,7 @@ function renderHome(){
     activeHtml+
     (activePieces.length===0?'<div class="empty"><div style="font-size:28px;margin-bottom:8px">🎸</div>Noch keine Stücke.<br>Lege dein erstes Stück an!</div>':'')+
     '<button class="btn btn-go mt12" onclick="addPieceUI()">+ Neues Stück</button>'+
+    '<button class="btn btn-soft mt8" onclick="nav(\'metro\')">⏱ Metronom</button>'+
     '<button class="btn btn-soft mt8" onclick="nav(\'settings\')">⚙ Einstellungen</button>';
 }
 
@@ -1949,7 +1953,7 @@ var POMO_WORK=25*60,POMO_BREAK=5*60;
 var pomoBreakActive=false,pomoBreakTimer=null,pomoBreakRemaining=0;
 
 // Metronome
-var audioCtx=null,metroOn=false,metroInt=null,metroBpm=80,metroBt=0;
+var audioCtx=null,metroOn=false,metroBpm=80;
 
 // Parkierte Übungen: mehrere pausierte Übungen nebeneinander, jede eine eigene Session.
 function saveParked(){try{localStorage.setItem("uz-parked",JSON.stringify(parked));}catch(e){}}
@@ -2217,6 +2221,7 @@ function renderPractice(){
       (!isRunning&&!planActive?'<div style="margin-top:8px;display:inline-flex;align-items:center;gap:6px"><span style="font-size:12px;color:var(--muted)">Übezeit</span><input type="number" min="1" max="240" value="'+getSessionTargetMin()+'" onchange="setPracticeTarget(this.value)" style="width:64px;font-size:14px;padding:6px;text-align:center">'+'<span style="font-size:12px;color:var(--muted)">Min</span></div>':'')+
     '</div>'+
     tempoHtml+
+    '<div class="metro-panel" data-src="'+(isPlay?'solo':'tempo')+'"></div>'+
     '<div class="row" style="gap:8px;margin-top:10px">'+
       (!isRunning?'<button class="btn btn-go" onclick="startPracticeTimer()" style="flex:1;font-size:16px">▶ Start</button>':
       '<button class="btn '+(practicePaused?'btn-go':'btn-soft')+'" onclick="togglePause()" style="flex:1">'+(practicePaused?'▶ Weiter':'⏸ Pause')+'</button>')+
@@ -2235,6 +2240,7 @@ function renderPractice(){
     :'<button class="btn btn-xs btn-soft mt8" onclick="togglePracticePlan()" style="width:100%;color:var(--accent2)">📋 Übeplan</button>')+
     '<div id="rounds-display" style="margin-top:8px"></div>';
   updateRoundsDisplay();
+  metroRenderPanel();
   if(sec&&sec.imgId){idbGet(sec.imgId).then(function(d){var sh=document.getElementById('practice-sheet');if(sh&&d)sh.innerHTML='<img src="'+d+'" onclick="openSheetZoom(\''+sec.imgId+'\')" style="width:100%;border:1px solid var(--border);border-radius:8px;margin-top:8px;cursor:pointer"><div style="text-align:center;font-size:11px;color:var(--muted);margin-top:2px">'+esc(sec.name)+' · 🔍 tippen zum Vergrößern</div>';}).catch(function(){});}
 }
 
@@ -2315,11 +2321,11 @@ function adjTempo(d){
     currentTempo=newT;
     var el=document.getElementById("tempo-display");if(el)el.textContent=currentTempo;
     updateRoundsDisplay();
-    if(metroOn){metroBpm=currentTempo;mStop();mStart();}
+    if(metroOn)metroSetBpm(currentTempo);
   }
 }
 
-function setTempoVal(v){currentTempo=v;var el=document.getElementById("tempo-display");if(el)el.textContent=v;if(metroOn){metroBpm=v;mStop();mStart();}}
+function setTempoVal(v){currentTempo=v;var el=document.getElementById("tempo-display");if(el)el.textContent=v;if(metroOn)metroSetBpm(v);}
 
 function updateRoundsDisplay(){
   var el=document.getElementById("rounds-display");if(!el)return;
@@ -2657,40 +2663,195 @@ function endPomoBreak(){
   renderPractice();
 }
 
-// === METRONOME (minimal) ===
-function togglePracticeMetro(){
-  if(metroOn)mStop();
-  else{metroBpm=currentTempo;mStart();}
-  var btn=document.getElementById("practice-metro-btn");
-  if(btn){btn.textContent=metroOn?'Stop':'♩';btn.style.background=metroOn?'#c0392b':'var(--accent2)';}
+// === METRONOME (Lookahead-Scheduler auf der Audio-Uhr) ===
+var METRO_LOOKAHEAD=0.15, METRO_TICK=25;
+var metroBeats=4, metroSubdiv=1;
+var metroNextTime=0, metroStep=0, metroSchedTimer=null, metroNoiseBuf=null;
+var metroVisQueue=[], metroVisRaf=null, metroVisBeat=-1;
+var METRO_SUBS=[{v:1,l:'♩'},{v:2,l:'♪'},{v:3,l:'♪³'},{v:4,l:'♬'}];
+
+function metroLoadPrefs(){
+  try{
+    var s=JSON.parse(localStorage.getItem('uz-metro')||'{}');
+    if(s.beats===3||s.beats===4)metroBeats=s.beats;
+    if([1,2,3,4].indexOf(s.subdiv)>=0)metroSubdiv=s.subdiv;
+    if(s.bpm)metroBpm=Math.max(20,Math.min(300,s.bpm));
+  }catch(e){}
+}
+function metroSavePrefs(){
+  try{localStorage.setItem('uz-metro',JSON.stringify({beats:metroBeats,subdiv:metroSubdiv,bpm:metroBpm}));}catch(e){}
 }
 
-function mClick(accent){
-  if(!audioCtx)return;
+function metroCtx(){
+  if(!audioCtx){try{audioCtx=new(window.AudioContext||window.webkitAudioContext)();}catch(e){return null;}}
+  if(audioCtx.state==='suspended'){try{audioCtx.resume();}catch(e){}}
+  return audioCtx;
+}
+function metroBuf(){
+  if(metroNoiseBuf)return metroNoiseBuf;
+  var ctx=metroCtx();if(!ctx)return null;
   try{
-    var o=audioCtx.createOscillator();var g=audioCtx.createGain();
-    o.connect(g);g.connect(audioCtx.destination);
-    o.frequency.value=accent?1000:700;g.gain.value=accent?0.4:0.2;
-    g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+0.06);
-    o.start(audioCtx.currentTime);o.stop(audioCtx.currentTime+0.06);
+    var len=Math.floor(ctx.sampleRate*0.08);
+    var b=ctx.createBuffer(1,len,ctx.sampleRate);
+    var d=b.getChannelData(0);
+    for(var i=0;i<len;i++)d[i]=Math.random()*2-1;
+    metroNoiseBuf=b;return b;
+  }catch(e){return null;}
+}
+function metroClickAt(t,type){
+  var ctx=audioCtx,buf=metroBuf();
+  if(!ctx||!buf)return;
+  try{
+    var freq,q,peak,dur;
+    if(type==='accent'){freq=2400;q=1.1;peak=0.9;dur=0.045;}
+    else if(type==='beat'){freq=1500;q=1.3;peak=0.5;dur=0.038;}
+    else{freq=3600;q=2.0;peak=0.18;dur=0.020;}
+    var src=ctx.createBufferSource();src.buffer=buf;
+    var bp=ctx.createBiquadFilter();bp.type='bandpass';bp.frequency.value=freq;bp.Q.value=q;
+    var g=ctx.createGain();
+    src.connect(bp);bp.connect(g);g.connect(ctx.destination);
+    g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(peak,t+0.002);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+    src.start(t);src.stop(t+dur+0.02);
   }catch(e){}
+}
+function metroScheduler(){
+  var ctx=audioCtx;
+  if(!ctx||!metroOn)return;
+  var horizon=ctx.currentTime+METRO_LOOKAHEAD;
+  var guard=0;
+  if(metroNextTime<ctx.currentTime)metroNextTime=ctx.currentTime+0.03;
+  while(metroNextTime<horizon&&guard++<400){
+    var per=metroSubdiv;
+    var isBeat=(metroStep%per)===0;
+    var beatIdx=Math.floor(metroStep/per);
+    metroClickAt(metroNextTime,isBeat?(beatIdx===0?'accent':'beat'):'sub');
+    if(isBeat)metroVisQueue.push({t:metroNextTime,b:beatIdx});
+    metroNextTime+=(60/metroBpm)/per;
+    metroStep=(metroStep+1)%(metroBeats*per);
+  }
+}
+function metroVisTick(){
+  if(!metroOn){metroVisRaf=null;metroVisBeat=-1;metroPaintDots();return;}
+  if(audioCtx){
+    while(metroVisQueue.length&&metroVisQueue[0].t<=audioCtx.currentTime){
+      metroVisBeat=metroVisQueue.shift().b;
+    }
+  }
+  metroPaintDots();
+  metroVisRaf=requestAnimationFrame(metroVisTick);
+}
+function metroPaintDots(){
+  var wraps=document.querySelectorAll('.metro-dots');
+  for(var i=0;i<wraps.length;i++){
+    var dots=wraps[i].children;
+    for(var j=0;j<dots.length;j++){
+      var on=metroOn&&(j===metroVisBeat);
+      dots[j].style.background=on?(j===0?'var(--accent)':'var(--accent2)'):'var(--border)';
+      dots[j].style.transform=on?'scale(1.4)':'scale(1)';
+    }
+  }
 }
 
 function mStart(){
-  if(!audioCtx){try{audioCtx=new(window.AudioContext||window.webkitAudioContext)();}catch(e){return;}}
-  if(audioCtx.state==='suspended')audioCtx.resume();
-  metroBt=0;metroOn=true;
-  var interval=Math.round(60000/metroBpm);
-  setTimeout(function(){
-    mClick(true);
-    metroInt=setInterval(function(){
-      metroBt=(metroBt+1)%4;
-      mClick(metroBt===0);
-    },interval);
-  },100);
+  var ctx=metroCtx();if(!ctx)return;
+  metroBuf();
+  metroOn=true;metroStep=0;metroVisQueue=[];metroVisBeat=-1;
+  metroNextTime=ctx.currentTime+0.09;
+  if(metroSchedTimer)clearInterval(metroSchedTimer);
+  metroSchedTimer=setInterval(metroScheduler,METRO_TICK);
+  metroScheduler();
+  if(!metroVisRaf)metroVisRaf=requestAnimationFrame(metroVisTick);
+  metroRenderPanel();
 }
+function mStop(){
+  metroOn=false;
+  if(metroSchedTimer){clearInterval(metroSchedTimer);metroSchedTimer=null;}
+  metroVisQueue=[];metroVisBeat=-1;
+  metroRenderPanel();
+}
+function metroSetBpm(v){
+  metroBpm=Math.max(20,Math.min(300,Math.round(v)));
+  var e=document.getElementById('metro-bpm');if(e)e.textContent=metroBpm;
+  metroSavePrefs();
+}
+function metroAdj(d){metroSetBpm(metroBpm+d);}
+function metroPhaseReset(){
+  if(!metroOn||!audioCtx)return;
+  metroStep=0;metroVisQueue=[];metroVisBeat=-1;
+  metroNextTime=Math.max(audioCtx.currentTime+0.09,metroNextTime);
+}
+function metroSetBeats(n){metroBeats=n;metroSavePrefs();metroPhaseReset();metroRenderPanel();}
+function metroSetSubdiv(n){metroSubdiv=n;metroSavePrefs();metroPhaseReset();metroRenderPanel();}
+function metroToggle(useTempo){
+  if(metroOn){mStop();return;}
+  if(useTempo)metroSetBpm(currentTempo);
+  mStart();
+}
+function togglePracticeMetro(){metroToggle(true);}
 
-function mStop(){clearInterval(metroInt);metroOn=false;metroBt=0;}
+function metroPanelHtml(src){
+  var dots='';
+  for(var i=0;i<metroBeats;i++){
+    dots+='<div style="width:13px;height:13px;border-radius:50%;background:var(--border);transition:transform .06s,background .06s"></div>';
+  }
+  var beatBtns=[4,3].map(function(n){
+    return '<button class="btn btn-xs '+(metroBeats===n?'btn-go':'btn-soft')+'" onclick="metroSetBeats('+n+')" style="min-width:44px">'+n+'/4</button>';
+  }).join('');
+  var subBtns=METRO_SUBS.map(function(s){
+    return '<button class="btn btn-xs '+(metroSubdiv===s.v?'btn-go':'btn-soft')+'" onclick="metroSetSubdiv('+s.v+')" style="min-width:44px;font-size:15px">'+s.l+'</button>';
+  }).join('');
+  return '<div class="card" style="padding:12px;margin-top:8px">'+
+    '<div style="display:flex;align-items:center;justify-content:center;gap:14px">'+
+      '<button onclick="metroToggle('+(src==='tempo'?'true':'false')+')" style="width:56px;height:56px;border-radius:50%;border:none;cursor:pointer;font-size:22px;color:#fff;background:'+(metroOn?'#c0392b':'var(--accent2)')+'">'+(metroOn?'⏹':'♩')+'</button>'+
+      '<div class="metro-dots" style="display:flex;gap:9px;align-items:center">'+dots+'</div>'+
+    '</div>'+
+    '<div style="display:flex;gap:6px;justify-content:center;align-items:center;margin-top:10px;flex-wrap:wrap">'+
+      beatBtns+
+      '<div style="width:1px;height:22px;background:var(--border);margin:0 4px"></div>'+
+      subBtns+
+    '</div>'+
+  '</div>';
+}
+function metroRenderPanel(){
+  var els=document.querySelectorAll('.metro-panel');
+  for(var i=0;i<els.length;i++){
+    els[i].innerHTML=metroPanelHtml(els[i].getAttribute('data-src')||'solo');
+  }
+  var b=document.getElementById('metro-bpm');if(b)b.textContent=metroBpm;
+  metroPaintDots();
+}
+function renderMetro(){
+  var el=document.getElementById('v-metro');
+  if(!el)return;
+  el.innerHTML=
+    '<button class="btn btn-xs btn-soft mb8" onclick="metroBack()" style="width:auto">← Zurück</button>'+
+    '<div style="text-align:center;padding:6px 0 2px">'+
+      '<div style="font-family:\'DM Serif Display\',serif;font-size:20px">Metronom</div>'+
+    '</div>'+
+    '<div class="card" style="padding:14px">'+
+      '<div style="display:flex;align-items:center;justify-content:center;gap:8px">'+
+        '<button class="tempo-btn" onclick="metroAdj(-5)">-5</button>'+
+        '<button class="tempo-btn" onclick="metroAdj(-1)">-1</button>'+
+        '<div style="font-family:\'DM Serif Display\',serif;font-size:44px;color:var(--accent2);min-width:92px;text-align:center" id="metro-bpm">'+metroBpm+'</div>'+
+        '<button class="tempo-btn" onclick="metroAdj(1)">+1</button>'+
+        '<button class="tempo-btn" onclick="metroAdj(5)">+5</button>'+
+      '</div>'+
+      '<div style="text-align:center;font-size:11px;color:var(--muted);margin-top:2px">BPM</div>'+
+      '<div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-top:10px">'+
+        [60,72,80,90,100,120].map(function(v){
+          return '<button class="btn btn-xs btn-soft" onclick="metroSetBpm('+v+')">'+v+'</button>';
+        }).join('')+
+      '</div>'+
+    '</div>'+
+    '<div class="metro-panel" data-src="solo"></div>';
+  metroRenderPanel();
+}
+function metroBack(){
+  if(practicing&&practiceStart)nav('practice');
+  else nav('home');
+}
 
 // === PRIME TIME ===
 function startPrimeTime(){
@@ -4190,7 +4351,7 @@ function renderSettings(){
     '<button class="btn btn-soft mt12" onclick="nav(\'home\')">← Zurück</button>'+
     '<div style="text-align:center;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">'+
       '<div style="font-size:13px;color:var(--text);font-weight:500">🎸 Übezeit v3.0</div>'+
-      '<div style="font-size:11px;color:var(--muted)">Build 2026-06-24-H</div>'+
+      '<div style="font-size:11px;color:var(--muted)">Build 2026-09-01-A</div>'+
     '</div>';
 }
 
@@ -4354,6 +4515,7 @@ function getMonday(d){var dt=new Date(d||new Date());var day=dt.getDay();var dif
 // === INIT ===
 try{
   repairSplitHistories();
+  metroLoadPrefs();
   pendingRecovery=loadPending();
   renderHome();
 }catch(e){
