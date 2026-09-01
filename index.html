@@ -2156,6 +2156,7 @@ function startPracticeTimer(){
   clearInterval(practiceTimer);
   practiceTimer=setInterval(practiceTick,1000);
   savePending();
+  if(practiceMode!=='spielen'&&metroAuto&&!metroOn){metroSetBpm(currentTempo);mStart();}
   renderPractice();
 }
 
@@ -2665,7 +2666,7 @@ function endPomoBreak(){
 
 // === METRONOME (Lookahead-Scheduler auf der Audio-Uhr) ===
 var METRO_LOOKAHEAD=0.15, METRO_TICK=25;
-var metroBeats=4, metroSubdiv=1;
+var metroBeats=4, metroSubdiv=1, metroAuto=true;
 var metroNextTime=0, metroStep=0, metroSchedTimer=null, metroNoiseBuf=null;
 var metroVisQueue=[], metroVisRaf=null, metroVisBeat=-1;
 var METRO_SUBS=[{v:1,l:'♩'},{v:2,l:'♪'},{v:3,l:'♪³'},{v:4,l:'♬'}];
@@ -2676,10 +2677,11 @@ function metroLoadPrefs(){
     if(s.beats===3||s.beats===4)metroBeats=s.beats;
     if([1,2,3,4].indexOf(s.subdiv)>=0)metroSubdiv=s.subdiv;
     if(s.bpm)metroBpm=Math.max(20,Math.min(300,s.bpm));
+    if(typeof s.auto==='boolean')metroAuto=s.auto;
   }catch(e){}
 }
 function metroSavePrefs(){
-  try{localStorage.setItem('uz-metro',JSON.stringify({beats:metroBeats,subdiv:metroSubdiv,bpm:metroBpm}));}catch(e){}
+  try{localStorage.setItem('uz-metro',JSON.stringify({beats:metroBeats,subdiv:metroSubdiv,bpm:metroBpm,auto:metroAuto}));}catch(e){}
 }
 
 function metroCtx(){
@@ -2785,9 +2787,12 @@ function metroPhaseReset(){
 function metroSetBeats(n){metroBeats=n;metroSavePrefs();metroPhaseReset();metroRenderPanel();}
 function metroSetSubdiv(n){metroSubdiv=n;metroSavePrefs();metroPhaseReset();metroRenderPanel();}
 function metroToggle(useTempo){
-  if(metroOn){mStop();return;}
-  if(useTempo)metroSetBpm(currentTempo);
-  mStart();
+  if(metroOn){mStop();}
+  else{
+    if(useTempo)metroSetBpm(currentTempo);
+    mStart();
+  }
+  if(useTempo){metroAuto=metroOn;metroSavePrefs();}
 }
 function togglePracticeMetro(){metroToggle(true);}
 
@@ -4351,7 +4356,7 @@ function renderSettings(){
     '<button class="btn btn-soft mt12" onclick="nav(\'home\')">← Zurück</button>'+
     '<div style="text-align:center;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">'+
       '<div style="font-size:13px;color:var(--text);font-weight:500">🎸 Übezeit v3.0</div>'+
-      '<div style="font-size:11px;color:var(--muted)">Build 2026-09-01-A</div>'+
+      '<div style="font-size:11px;color:var(--muted)">Build 2026-09-01-B</div>'+
     '</div>';
 }
 
