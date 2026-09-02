@@ -1948,9 +1948,51 @@ function setPracticeTarget(v){
   var sub=document.getElementById("p-timer-sub");if(sub)sub.innerHTML=fmtTimerSub(false);
 }
 
+// Schnellwahl der Übezeit mit Pomodoro-Vorrang:
+// Passt die gewählte Zeit nicht mehr in den laufenden Pomodoro-Block,
+// gibt es einen Hinweis mit Verlängerung (+5/+10, max +10) oder "Pomodoro gilt".
+function quickTarget(v){
+  var m=Math.max(1,Math.min(240,parseInt(v)||0));
+  if(!m)return;
+  setPracticeTarget(m);
+  var remSec=POMO_WORK+pomoExtraSec-pomoWorkElapsed;
+  pomoHintMin=(m*60>remSec+30)?m:0;
+  renderPractice();
+}
+function pomoHintHtml(){
+  if(!pomoHintMin)return '';
+  var remMin=Math.max(0,Math.round((POMO_WORK+pomoExtraSec-pomoWorkElapsed)/60));
+  var need=pomoHintMin-remMin;
+  var extLeft=Math.round((600-pomoExtraSec)/60);
+  var btns='';
+  if(need<=5&&extLeft>=5)btns+='<button class="btn btn-xs btn-go" onclick="pomoExtend(5)" style="min-height:44px">+5 Min verlängern</button>';
+  if(need<=10&&extLeft>=10)btns+='<button class="btn btn-xs btn-go" onclick="pomoExtend(10)" style="min-height:44px">+10 Min verlängern</button>';
+  var msg,extra='';
+  if(need>10||need>extLeft){
+    msg='🍅 Pomodoro: noch '+remMin+' Min bis zur Pause — das reicht auch verlängert nicht.';
+    extra='<button class="btn btn-xs btn-soft" onclick="pomoBreakNow()" style="min-height:44px;color:var(--accent2)">☕ Erst 5 Min Pause, dann frisch</button>';
+  }else{
+    msg='🍅 Pomodoro: noch '+remMin+' Min bis zur Pause.';
+  }
+  return '<div class="card" style="padding:10px;border-left:3px solid var(--accent);text-align:center">'+
+    '<div style="font-size:12px;margin-bottom:8px">'+msg+'</div>'+
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center">'+btns+extra+
+      '<button class="btn btn-xs btn-soft" onclick="pomoHintDismiss()" style="min-height:44px">Pomodoro gilt</button>'+
+    '</div>'+
+  '</div>';
+}
+function pomoExtend(min){
+  pomoExtraSec=Math.min(600,pomoExtraSec+min*60);
+  pomoHintMin=0;
+  renderPractice();
+}
+function pomoHintDismiss(){pomoHintMin=0;renderPractice();}
+function pomoBreakNow(){pomoHintMin=0;showPomoBreak();}
+
 // Pomodoro
 var POMO_WORK=25*60,POMO_BREAK=5*60;
 var pomoBreakActive=false,pomoBreakTimer=null,pomoBreakRemaining=0;
+var pomoWorkElapsed=0,pomoExtraSec=0,pomoHintMin=0,pomoLastWorkTs=null;
 
 // Metronome
 var audioCtx=null,metroOn=false,metroBpm=80;
@@ -2038,6 +2080,8 @@ function startPracticeFromDetail(pid,si){
   lastTickTs=null;
   // Reset session timer only if not in a plan session
   if(!planActive){sessionTotalElapsed=0;timeUpShown=false;practiceTargetMin=settings.sessionMin||45;}
+  pomoHintMin=0;
+  if(pomoLastWorkTs&&Date.now()-pomoLastWorkTs>15*60*1000){pomoWorkElapsed=0;pomoExtraSec=0;}
   
   if(practiceMode==='ueben'){
     currentTempo=sec.startBpm||getSecLast(p.name,sec.name)||sec.targetBpm||80;
@@ -2063,6 +2107,8 @@ function startWholepiece(pid){
   practicing=true;
   lastTickTs=null;
   if(!planActive){sessionTotalElapsed=0;timeUpShown=false;}
+  pomoHintMin=0;
+  if(pomoLastWorkTs&&Date.now()-pomoLastWorkTs>15*60*1000){pomoWorkElapsed=0;pomoExtraSec=0;}
   
   document.querySelectorAll(".view").forEach(function(x){x.classList.remove("on");});
   document.getElementById("v-practice").classList.add("on");
@@ -2134,6 +2180,7 @@ function practiceTick(){
   lastTickTs=now;
   if(dt<0)dt=0; if(dt>43200)dt=0; // ignore clock jumps / >12h gaps
   sessionTotalElapsed+=dt;
+  pomoWorkElapsed+=dt;pomoLastWorkTs=now;
   savePending();
   if(practiceMode==='primetime'){
     var pel=document.getElementById("p-timer");
@@ -2145,6 +2192,7 @@ function practiceTick(){
   if(!planActive){
     var totalSec=getSessionTargetMin()*60;
     if(!timeUpShown&&sessionTotalElapsed>=totalSec){timeUpShown=true;showTimeUp();}
+    if(!pomoBreakActive&&pomoWorkElapsed>=POMO_WORK+pomoExtraSec){showPomoBreak();return;}
   }
 }
 
@@ -2219,7 +2267,16 @@ function renderPractice(){
       '<div style="font-size:12px;color:var(--muted);margin-top:2px" id="p-timer-sub">'+fmtTimerSub(isRunning)+'</div>'+
       (practicePaused?'<div style="font-size:14px;color:var(--accent);font-weight:600;margin-top:4px">⏸ Pausiert</div>':'')+
       (!isRunning?'<div style="font-size:12px;color:var(--muted);margin-top:4px">'+(isPlay?'Wenn bereit, ▶ drücken':'Tempo einstellen, dann ▶ drücken')+'</div>':'')+
-      (!isRunning&&!planActive?'<div style="margin-top:8px;display:inline-flex;align-items:center;gap:6px"><span style="font-size:12px;color:var(--muted)">Übezeit</span><input type="number" min="1" max="240" value="'+getSessionTargetMin()+'" onchange="setPracticeTarget(this.value)" style="width:64px;font-size:14px;padding:6px;text-align:center">'+'<span style="font-size:12px;color:var(--muted)">Min</span></div>':'')+
+      (!isRunning&&!planActive?
+        '<div style="margin-top:8px">'+
+          '<div style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">'+
+            '<span style="font-size:12px;color:var(--muted)">Übezeit</span>'+
+            [10,15,20,30].map(function(m){return '<button class="btn btn-xs '+(practiceTargetMin===m?'btn-go':'btn-soft')+'" onclick="quickTarget('+m+')" style="min-width:46px;min-height:44px">'+m+'</button>';}).join('')+
+            '<input type="number" min="1" max="240" value="'+getSessionTargetMin()+'" onchange="quickTarget(this.value)" style="width:58px;font-size:16px;padding:8px 4px;text-align:center;min-height:44px">'+
+            '<span style="font-size:12px;color:var(--muted)">Min</span>'+
+          '</div>'+
+          '<div id="pomo-hint" style="margin-top:6px">'+pomoHintHtml()+'</div>'+
+        '</div>':'')+
     '</div>'+
     tempoHtml+
     '<div class="metro-panel" data-src="'+(isPlay?'solo':'tempo')+'"></div>'+
@@ -2246,10 +2303,12 @@ function renderPractice(){
 }
 
 function updatePracticeTimer(){
-  var el=document.getElementById("p-timer");if(el)el.textContent=fmtCountdown();
+  var totalSec=getSessionTargetMin()*60;
+  var over=!planActive&&(totalSec-sessionTotalElapsed<=0);
+  var el=document.getElementById("p-timer");
+  if(el){el.textContent=fmtCountdown();el.style.color=over?'var(--accent)':'';}
   var sub=document.getElementById("p-timer-sub");if(sub)sub.innerHTML=fmtTimerSub(true);
   // Check if session time is up
-  var totalSec=getSessionTargetMin()*60;
   if(!planActive&&!timeUpShown&&sessionTotalElapsed>=totalSec){timeUpShown=true;showTimeUp();}
 }
 
@@ -2279,22 +2338,27 @@ function fmtTimerSub(isRunning){
 }
 
 function showTimeUp(){
-  // Auto-pause and show gentle message
-  if(!practicePaused){practicePaused=true;pauseStart=Date.now();}
-  var el=document.getElementById("v-practice");
-  el.innerHTML='<div style="text-align:center;padding:30px 16px">'+
-    '<div style="font-size:48px;margin-bottom:12px">🎸</div>'+
-    '<div style="font-family:\'DM Serif Display\',serif;font-size:24px;margin-bottom:8px">Zeit ist um!</div>'+
-    '<div style="font-size:14px;color:var(--muted);margin-bottom:16px">'+getSessionTargetMin()+' Minuten geschafft. Gut gemacht!</div>'+
-    '<div class="card"><div style="font-size:13px;font-weight:500;text-align:center">'+fmt(sessionTotalElapsed)+' geübt</div></div>'+
-    '<button class="btn btn-go mt8" onclick="resumeAfterTimeUp()" style="font-size:16px;padding:16px">▶ Weiterüben</button>'+
-    '<button class="btn btn-soft mt8" onclick="stopPractice(false)">⏹ Beenden</button>'+
-  '</div>';
+  // Kein Zwangsstopp: Metronom aus (selbst das Signal), kurzer Ton, Timer läuft sichtbar weiter
+  if(metroOn)mStop();
+  timeUpTone();
+  if(navigator.vibrate){try{navigator.vibrate(200);}catch(e){}}
+  updatePracticeTimer();
 }
 
-function resumeAfterTimeUp(){
-  if(practicePaused){totalPausedMs+=Date.now()-pauseStart;practicePaused=false;pauseStart=null;}
-  renderPractice();
+function timeUpTone(){
+  var ctx=metroCtx();if(!ctx)return;
+  try{
+    [660,520].forEach(function(f,i){
+      var o=ctx.createOscillator(),g=ctx.createGain();
+      o.type='sine';o.frequency.value=f;
+      var t=ctx.currentTime+0.02+i*0.18;
+      g.gain.setValueAtTime(0.0001,t);
+      g.gain.exponentialRampToValueAtTime(0.18,t+0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001,t+0.15);
+      o.connect(g);g.connect(ctx.destination);
+      o.start(t);o.stop(t+0.16);
+    });
+  }catch(e){}
 }
 
 function togglePause(){
@@ -2303,6 +2367,8 @@ function togglePause(){
     practicePaused=false;pauseStart=null;
     roundStart=Date.now();
     lastTickTs=Date.now();
+    // Kopplung: Weiter startet auch das Metronom wieder (nur Üben, nicht nach Zeit-um)
+    if(practiceMode!=='spielen'&&metroAuto&&!metroOn&&!timeUpShown){metroSetBpm(currentTempo);mStart();}
   }else{
     practicePaused=true;pauseStart=Date.now();
     if(metroOn)mStop();
@@ -2627,7 +2693,8 @@ function cancelRating(){
 // === POMODORO ===
 function showPomoBreak(){
   pomoBreakActive=true;
-  if(!practicePaused){practicePaused=true;pauseStart=Date.now();if(metroOn)mStop();}
+  if(metroOn)mStop();
+  if(!practicePaused&&practiceStart){practicePaused=true;pauseStart=Date.now();}
   pomoBreakRemaining=POMO_BREAK;
   var el=document.getElementById("v-practice");
   renderPomoBreak(el);
@@ -2660,7 +2727,10 @@ function renderPomoBreak(el){
 function endPomoBreak(){
   pomoBreakActive=false;
   if(pomoBreakTimer){clearInterval(pomoBreakTimer);pomoBreakTimer=null;}
-  if(practicePaused){totalPausedMs+=Date.now()-pauseStart;practicePaused=false;pauseStart=null;}
+  pomoWorkElapsed=0;pomoExtraSec=0;
+  if(practicePaused&&pauseStart){totalPausedMs+=Date.now()-pauseStart;practicePaused=false;pauseStart=null;lastTickTs=Date.now();roundStart=Date.now();}
+  // Timer lief weiter? Dann Metronom mit anwerfen (Kopplung), außer Übezeit ist schon um
+  if(practiceStart&&!practicePaused&&practiceMode!=='spielen'&&metroAuto&&!metroOn&&!timeUpShown){metroSetBpm(currentTempo);mStart();}
   renderPractice();
 }
 
@@ -2792,7 +2862,14 @@ function metroToggle(useTempo){
     if(useTempo)metroSetBpm(currentTempo);
     mStart();
   }
-  if(useTempo){metroAuto=metroOn;metroSavePrefs();}
+  if(useTempo){
+    metroAuto=metroOn;metroSavePrefs();
+    // Kopplung: Metronom-Start startet auch die Uhr (bzw. setzt sie fort)
+    if(metroOn&&practicing&&practiceMode!=='spielen'){
+      if(!practiceStart)startPracticeTimer();
+      else if(practicePaused)togglePause();
+    }
+  }
 }
 function togglePracticeMetro(){metroToggle(true);}
 
@@ -4356,7 +4433,7 @@ function renderSettings(){
     '<button class="btn btn-soft mt12" onclick="nav(\'home\')">← Zurück</button>'+
     '<div style="text-align:center;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">'+
       '<div style="font-size:13px;color:var(--text);font-weight:500">🎸 Übezeit v3.0</div>'+
-      '<div style="font-size:11px;color:var(--muted)">Build 2026-09-01-B</div>'+
+      '<div style="font-size:11px;color:var(--muted)">Build 2026-09-02-A</div>'+
     '</div>';
 }
 
