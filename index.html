@@ -1645,7 +1645,7 @@ function idbGet(id){return idbOpen().then(function(db){return new Promise(functi
 function idbDelete(id){return idbOpen().then(function(db){return new Promise(function(res){var tx=db.transaction('images','readwrite');tx.objectStore('images').delete(id);tx.oncomplete=function(){res();};});});}
 function idbAll(){return idbOpen().then(function(db){return new Promise(function(res){var out={};var tx=db.transaction('images','readonly');var c=tx.objectStore('images').openCursor();c.onsuccess=function(e){var cur=e.target.result;if(cur){out[cur.key]=cur.value;cur.continue();}else res(out);};});});}
 
-var cutPieceId=null,cutPageImg=null,cutNextBar=1,cutLastCount=0,cutPendingCrop=null,cutDragActive=false,cutY0=0,cutY1=0,cutX0=0,cutX1=0,cutSelSecs=[],cutZoom=1;
+var cutPieceId=null,cutPageImg=null,cutNextBar=1,cutLastCount=0,cutPendingCrop=null,cutDragActive=false,cutY0=0,cutY1=0,cutX0=0,cutX1=0,cutSelSecs=[],cutZoom=1,cutRectMode=false;
 
 // Ein Bereich kann mehrere Ausschnitte tragen (seitenuebergreifende Takte).
 // Alte Daten mit einem einzelnen s.imgId werden beim Lesen still angehoben.
@@ -1695,7 +1695,11 @@ function renderCutTool(){
     inner+='<div style="font-size:12px;color:var(--muted);margin-bottom:10px">Lade eine Notenseite hoch. Danach ziehst du über jede Notenzeile (von oben nach unten), und die Zeile wird den Takten zugeordnet.</div>';
     inner+='<label class="btn btn-go" style="display:block;text-align:center">Notenseite hochladen<input type="file" accept="image/*" style="display:none" onchange="cutUpload(this.files[0])"></label>';
   }else{
-    inner+='<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Senkrecht ziehen = ganze Notenzeile. Schräg ziehen = Rechteck für einzelne Takte. Danach wählst du den Bereich.</div>';
+    inner+='<div style="font-size:11px;color:var(--muted);margin-bottom:6px">'+(cutRectMode?'Schräg ziehen: von einer Ecke des gewünschten Takts zur gegenüberliegenden.':'Senkrecht ziehen: von über der Notenzeile bis unter die TAB-Zeile.')+'</div>';
+    inner+='<div class="row" style="gap:6px;margin-bottom:6px">'+
+      '<button class="btn btn-xs '+(!cutRectMode?'btn-go':'btn-soft')+'" style="flex:1" onclick="setCutRectMode(false)">Ganze Zeile</button>'+
+      '<button class="btn btn-xs '+(cutRectMode?'btn-go':'btn-soft')+'" style="flex:1" onclick="setCutRectMode(true)">Einzelne Takte</button>'+
+      '</div>';
     inner+='<div class="row" style="gap:6px;margin-bottom:6px">'+
       [1,2,3].map(function(z){return '<button class="btn btn-xs '+(cutZoom===z?'btn-go':'btn-soft')+'" style="flex:1" onclick="setCutZoom('+z+')">'+z+'×</button>';}).join('')+
       '</div>';
@@ -1782,13 +1786,8 @@ function cutAttachHandlers(){
     stage.onmouseup=end;stage.onmouseleave=cancel;
   }
 }
-// Seitliche Bewegung unter 8 % der Bildbreite gilt als "ganze Zeile gemeint"
-function cutFullWidth(){
-  var imgEl=document.getElementById('cut-img');if(!imgEl)return true;
-  var w=imgEl.getBoundingClientRect().width||1;
-  return Math.abs(cutX1-cutX0) < w*0.08;
-}
-
+function cutFullWidth(){return !cutRectMode;}
+function setCutRectMode(v){cutRectMode=v;cutPendingCrop=null;renderCutTool();}
 function cutFinishDrag(){
   var imgEl=document.getElementById('cut-img');if(!imgEl||!cutPageImg)return;
   var r=imgEl.getBoundingClientRect();
@@ -2464,13 +2463,29 @@ function renderPractice(){
     var ids=secImgs(sec);
     Promise.all(ids.map(function(id){return idbGet(id).catch(function(){return null;});})).then(function(all){
       var sh=document.getElementById('practice-sheet');if(!sh)return;
-      var h='';
-      all.forEach(function(d,k){
-        if(!d)return;
-        h+='<img src="'+d+'" onclick="openSheetZoom(\''+ids[k]+'\')" style="width:100%;border:1px solid var(--border);border-radius:8px;margin-top:'+(k?'4px':'8px')+';cursor:pointer">';
+      // Ausschnitte im Groessenverhaeltnis der Vorlage zeigen: ein einzelner Takt
+      // darf nicht so breit dargestellt werden wie eine ganze Notenzeile.
+      var metas=all.map(function(d){return d?{d:d,w:0}:null;});
+      var pend=0,done=function(){
+        var mx=0;metas.forEach(function(m){if(m&&m.w>mx)mx=m.w;});
+        var h='';
+        metas.forEach(function(m,k){
+          if(!m)return;
+          var pc=mx?Math.max(12,Math.round(m.w/mx*100)):100;
+          h+='<img src="'+m.d+'" onclick="openSheetZoom(\''+ids[k]+'\')" style="width:'+pc+'%;border:1px solid var(--border);border-radius:8px;margin-top:'+(k?'4px':'8px')+';cursor:pointer;display:block">';
+        });
+        if(h)h+='<div style="text-align:center;font-size:11px;color:var(--muted);margin-top:2px">'+esc(sec.name)+' · 🔍 tippen zum Vergrößern</div>';
+        sh.innerHTML=h;
+      };
+      metas.forEach(function(m){if(m)pend++;});
+      if(!pend){done();return;}
+      metas.forEach(function(m){
+        if(!m)return;
+        var im=new Image();
+        im.onload=function(){m.w=im.naturalWidth;if(--pend===0)done();};
+        im.onerror=function(){if(--pend===0)done();};
+        im.src=m.d;
       });
-      if(h)h+='<div style="text-align:center;font-size:11px;color:var(--muted);margin-top:2px">'+esc(sec.name)+' · 🔍 tippen zum Vergrößern</div>';
-      sh.innerHTML=h;
     }).catch(function(){});
   }
 }
@@ -4611,7 +4626,7 @@ function renderSettings(){
     '<button class="btn btn-soft mt12" onclick="nav(\'home\')">← Zurück</button>'+
     '<div style="text-align:center;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">'+
       '<div style="font-size:13px;color:var(--text);font-weight:500">🎸 Übezeit v3.2</div>'+
-      '<div style="font-size:11px;color:var(--muted)">Build 2026-09-18-F</div>'+
+      '<div style="font-size:11px;color:var(--muted)">Build 2026-09-18-G</div>'+
     '</div>';
   try{renderImgStorage();}catch(e){}
 }
