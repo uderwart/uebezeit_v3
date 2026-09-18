@@ -496,6 +496,13 @@ function secKey(pName,sName){return pName+'::'+sName;}
 function getLast(n){var h=tempoHist[n]||[];return h.length?h[h.length-1].bpm:0;}
 function getHist(n){return tempoHist[n]||[];}
 function getSecLast(pName,sName){return getLast(secKey(pName,sName));}
+// Zuletzt geuebte Unterteilung (Viertel bleibt Bezugsgroesse, dies ist reine Dokumentation)
+function getLastSub(n){var h=tempoHist[n]||[];for(var i=h.length-1;i>=0;i--){if(h[i].sub)return h[i].sub;}return 0;}
+function getSecLastSub(pName,sName){return getLastSub(secKey(pName,sName));}
+var SUB_LABEL={1:'Viertel ♩',2:'Achtel ♪',3:'Triolen ♪³',4:'Sechzehntel ♬',6:'Sextolen 6',8:'Zweiunddreißigstel 8'};
+var SUB_SHORT={1:'♩',2:'♪',3:'♪³',4:'♬',6:'6',8:'8'};
+function subLabel(v){return SUB_LABEL[v]||'';}
+function subShort(v){return SUB_SHORT[v]||'';}
 function getSecHist(pName,sName){return getHist(secKey(pName,sName));}
 
 // === STREAK ===
@@ -2080,7 +2087,7 @@ function delPiece(id){
 var practicePieceId=null,practiceSectionIdx=0,practiceMode='ueben';
 var practiceStart=null,practiceElapsed=0,practiceTimer=null;
 var practicePaused=false,pauseStart=null,totalPausedMs=0;
-var currentTempo=80,roundStart=null,rounds=[];
+var currentTempo=80,roundStart=null,rounds=[],practiceSubRestored=false;
 var sessionTotalElapsed=0;
 var lastTickTs=null;   // wall-clock anchor so background time counts correctly
 var timeUpShown=false; // robust "time is up" trigger across time jumps
@@ -2175,7 +2182,7 @@ function parkLive(){
   parked.push(snapshotLive());
   saveParked();
   practicing=false;practiceStart=null;practicePaused=false;pauseStart=null;totalPausedMs=0;
-  rounds=[];lastTickTs=null;
+  rounds=[];lastTickTs=null;practiceSubRestored=false;
   clearPending();
 }
 function resumeParked(id){
@@ -2240,7 +2247,7 @@ function startPracticeFromDetail(pid,si){
   practiceElapsed=0;
   practicePaused=false;pauseStart=null;totalPausedMs=0;
   practiceStart=null;
-  rounds=[];roundStart=null;
+  rounds=[];roundStart=null;practiceSubRestored=false;
   practicing=true;
   lastTickTs=null;
   // Reset session timer only if not in a plan session
@@ -2268,7 +2275,7 @@ function startWholepiece(pid){
   practiceElapsed=0;
   practicePaused=false;pauseStart=null;totalPausedMs=0;
   practiceStart=null;
-  rounds=[];roundStart=null;
+  rounds=[];roundStart=null;practiceSubRestored=false;
   practicing=true;
   lastTickTs=null;
   if(!planActive){sessionTotalElapsed=0;timeUpShown=false;}
@@ -2387,6 +2394,8 @@ function renderPractice(){
   var tempoHtml='';
   if(!isPlay&&sec){
     var lastBpm=getSecLast(p.name,sec.name);
+    var lastSub=getSecLastSub(p.name,sec.name);
+    if(lastSub&&!practiceSubRestored){metroSubdiv=lastSub;practiceSubRestored=true;try{metroSavePrefs();}catch(e){}}
     tempoHtml='<div class="card" style="padding:12px">'+
       '<div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:8px">'+
         '<button class="tempo-btn" onclick="adjTempo(-5)">-5</button>'+
@@ -2400,6 +2409,7 @@ function renderPractice(){
         (lastBpm?'<button class="btn btn-xs btn-go" onclick="setTempoVal('+lastBpm+')">Letztes '+lastBpm+'</button>':'')+
         (sec.targetBpm?'<button class="btn btn-xs btn-primary" onclick="setTempoVal('+sec.targetBpm+')">Ziel '+sec.targetBpm+'</button>':'')+
       '</div>'+
+      (lastSub?'<div style="text-align:center;font-size:11px;color:var(--muted);margin-top:8px">Zuletzt geübt in '+subLabel(lastSub)+'</div>':'')+
     '</div>';
   }
   
@@ -2583,7 +2593,7 @@ function adjTempo(d){
   if(newT!==currentTempo){
     if(roundStart){
       var roundSec=Math.round((Date.now()-roundStart)/1000);
-      if(roundSec>0)rounds.push({bpm:currentTempo,seconds:roundSec});
+      if(roundSec>0)rounds.push({bpm:currentTempo,seconds:roundSec,sub:metroSubdiv});
       roundStart=Date.now();
     }
     currentTempo=newT;
@@ -2599,7 +2609,7 @@ function updateRoundsDisplay(){
   var el=document.getElementById("rounds-display");if(!el)return;
   if(!rounds.length){el.innerHTML='';return;}
   el.innerHTML='<div class="card" style="padding:10px"><div class="stitle">Tempo-Runden</div>'+rounds.map(function(r){
-    return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid var(--border)"><span style="color:var(--accent2);font-weight:600">'+r.bpm+' BPM</span><span style="color:var(--muted)">'+fmt(r.seconds)+'</span></div>';
+    return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid var(--border)"><span style="color:var(--accent2);font-weight:600">'+r.bpm+' BPM'+(r.sub&&r.sub>1?' <span style="color:var(--muted);font-weight:400">'+subShort(r.sub)+'</span>':'')+'</span><span style="color:var(--muted)">'+fmt(r.seconds)+'</span></div>';
   }).join('')+'</div>';
 }
 
@@ -2696,7 +2706,7 @@ function stopPractice(abort){
   if(!abort&&p&&(practiceStart||practiceMode==='spielen')){
     if(practiceMode!=='spielen'&&roundStart){
       var roundSec=Math.round((Date.now()-roundStart)/1000);
-      if(roundSec>0)rounds.push({bpm:currentTempo,seconds:roundSec});
+      if(roundSec>0)rounds.push({bpm:currentTempo,seconds:roundSec,sub:metroSubdiv});
     }
     var totalSec=practiceElapsed;
     
@@ -2706,7 +2716,9 @@ function stopPractice(abort){
         var maxBpm=Math.max.apply(null,rounds.map(function(r){return r.bpm;}));
         var key=secKey(p.name,sec.name);
         if(!tempoHist[key])tempoHist[key]=[];
-        tempoHist[key].push({date:new Date().toISOString(),bpm:maxBpm});
+        // Unterteilung der laengsten Runde – die praegt den Durchgang
+        var lead=rounds.slice().sort(function(a,b){return (b.seconds||0)-(a.seconds||0);})[0];
+        tempoHist[key].push({date:new Date().toISOString(),bpm:maxBpm,sub:(lead&&lead.sub)||1});
       }
       
       var sec=practiceSectionIdx>=0?(p.sections||[])[practiceSectionIdx]:null;
@@ -2766,7 +2778,12 @@ function showRatingScreen(){
   });
   
   var timeInfo=fmt(pe.totalSec);
-  var bpmInfo=pe.rounds&&pe.rounds.length?' · max '+Math.max.apply(null,pe.rounds.map(function(r){return r.bpm;}))+' BPM':'';
+  var bpmInfo='';
+  if(pe.rounds&&pe.rounds.length){
+    bpmInfo=' · max '+Math.max.apply(null,pe.rounds.map(function(r){return r.bpm;}))+' BPM';
+    var sMax=pe.rounds.slice().sort(function(a,b){return (b.seconds||0)-(a.seconds||0);})[0];
+    if(sMax&&sMax.sub>1)bpmInfo+=' '+subShort(sMax.sub);
+  }
   
   el.innerHTML=
   '<button class="btn btn-xs btn-soft mb8" onclick="cancelRating()" style="width:auto">← Zurück</button>'+
@@ -3145,7 +3162,7 @@ function startPrimeTime(){
   practiceElapsed=0;
   practicePaused=false;pauseStart=null;totalPausedMs=0;
   practiceStart=null;
-  rounds=[];roundStart=null;
+  rounds=[];roundStart=null;practiceSubRestored=false;
   practicing=true;
   
   document.querySelectorAll(".view").forEach(function(x){x.classList.remove("on");});
@@ -4047,7 +4064,7 @@ function startPrimeTimeWithPlan(item){
   practiceElapsed=0;
   practicePaused=false;pauseStart=null;totalPausedMs=0;
   practiceStart=null;
-  rounds=[];roundStart=null;
+  rounds=[];roundStart=null;practiceSubRestored=false;
   practicing=true;
   planPieceCountdown=(item.minutes||10)*60;
   planWarningShown=false;
@@ -4364,6 +4381,8 @@ function renderLog(){
         var maxBpm=Math.max.apply(null,e.rounds.map(function(r){return r.bpm;}));
         var minBpm=Math.min.apply(null,e.rounds.map(function(r){return r.bpm;}));
         tempoHtml=minBpm===maxBpm?maxBpm+' BPM':minBpm+'–'+maxBpm+' BPM';
+        var subs=e.rounds.map(function(r){return r.sub||1;}).filter(function(v,i,a){return a.indexOf(v)===i;}).filter(function(v){return v>1;});
+        if(subs.length)tempoHtml+=' '+subs.map(subShort).join('/');
       }
       
       entriesHtml+='<div style="padding:8px 0;border-bottom:1px solid var(--border)">'+
@@ -4638,7 +4657,7 @@ function renderSettings(){
     '<button class="btn btn-soft mt12" onclick="nav(\'home\')">← Zurück</button>'+
     '<div style="text-align:center;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">'+
       '<div style="font-size:13px;color:var(--text);font-weight:500">🎸 Übezeit v3.2</div>'+
-      '<div style="font-size:11px;color:var(--muted)">Build 2026-09-18-L</div>'+
+      '<div style="font-size:11px;color:var(--muted)">Build 2026-09-18-M</div>'+
     '</div>';
   try{renderImgStorage();}catch(e){}
 }
