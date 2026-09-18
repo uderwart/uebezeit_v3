@@ -1706,12 +1706,12 @@ function renderCutTool(){
     inner+='<div id="cut-scroll" style="overflow-x:'+(cutZoom>1?'auto':'hidden')+';-webkit-overflow-scrolling:touch">'+
       '<div id="cut-stage" style="position:relative;touch-action:none;user-select:none;width:'+(cutZoom*100)+'%"><img id="cut-img" src="'+cutPageImg.src+'" style="width:100%;display:block;border-radius:6px;pointer-events:none"><div id="cut-band" style="position:absolute;left:0;right:0;background:rgba(42,157,143,.3);border:2px solid var(--accent2);display:none;pointer-events:none"></div></div></div>';
     if(cutZoom>1)inner+='<div style="font-size:11px;color:var(--muted);margin-top:4px">Vergrößert — zum Verschieben am Rand seitlich wischen.</div>';
-    var any=(p.sections||[]).some(function(s){return secImgs(s).length;});
-    if(any){
-      inner+='<div style="font-size:11px;color:var(--muted);margin-top:10px;margin-bottom:4px">Zugeordnet:</div>';
+    if((p.sections||[]).length){
+      inner+='<div style="font-size:11px;color:var(--muted);margin-top:10px;margin-bottom:4px">Bereiche dieses Stücks:</div>';
       (p.sections||[]).forEach(function(s,si){
-        var ids=secImgs(s);if(!ids.length)return;
+        var ids=secImgs(s);
         inner+='<div style="font-size:11px;font-weight:600;margin-top:6px">'+esc(s.name||('Bereich '+(si+1)))+'</div>';
+        if(!ids.length){inner+='<div style="font-size:11px;color:var(--muted);padding:2px 0 2px 8px">noch kein Ausschnitt</div>';return;}
         ids.forEach(function(id,k){
           inner+='<div style="display:flex;align-items:center;gap:6px;font-size:11px;padding:2px 0 2px 8px">'+
             '<span style="flex:1;color:var(--muted)">Ausschnitt '+(k+1)+'</span>'+
@@ -4634,7 +4634,7 @@ function renderSettings(){
     '<button class="btn btn-soft mt12" onclick="nav(\'home\')">← Zurück</button>'+
     '<div style="text-align:center;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">'+
       '<div style="font-size:13px;color:var(--text);font-weight:500">🎸 Übezeit v3.2</div>'+
-      '<div style="font-size:11px;color:var(--muted)">Build 2026-09-18-H</div>'+
+      '<div style="font-size:11px;color:var(--muted)">Build 2026-09-18-I</div>'+
     '</div>';
   try{renderImgStorage();}catch(e){}
 }
