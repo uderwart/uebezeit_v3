@@ -1645,7 +1645,7 @@ function idbGet(id){return idbOpen().then(function(db){return new Promise(functi
 function idbDelete(id){return idbOpen().then(function(db){return new Promise(function(res){var tx=db.transaction('images','readwrite');tx.objectStore('images').delete(id);tx.oncomplete=function(){res();};});});}
 function idbAll(){return idbOpen().then(function(db){return new Promise(function(res){var out={};var tx=db.transaction('images','readonly');var c=tx.objectStore('images').openCursor();c.onsuccess=function(e){var cur=e.target.result;if(cur){out[cur.key]=cur.value;cur.continue();}else res(out);};});});}
 
-var cutPieceId=null,cutPageImg=null,cutNextBar=1,cutLastCount=0,cutPendingCrop=null,cutDragActive=false,cutY0=0,cutY1=0,cutX0=0,cutX1=0,cutSelSecs=[];
+var cutPieceId=null,cutPageImg=null,cutNextBar=1,cutLastCount=0,cutPendingCrop=null,cutDragActive=false,cutY0=0,cutY1=0,cutX0=0,cutX1=0,cutSelSecs=[],cutZoom=1;
 
 // Ein Bereich kann mehrere Ausschnitte tragen (seitenuebergreifende Takte).
 // Alte Daten mit einem einzelnen s.imgId werden beim Lesen still angehoben.
@@ -1696,7 +1696,12 @@ function renderCutTool(){
     inner+='<label class="btn btn-go" style="display:block;text-align:center">Notenseite hochladen<input type="file" accept="image/*" style="display:none" onchange="cutUpload(this.files[0])"></label>';
   }else{
     inner+='<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Senkrecht ziehen = ganze Notenzeile. Schräg ziehen = Rechteck für einzelne Takte. Danach wählst du den Bereich.</div>';
-    inner+='<div id="cut-stage" style="position:relative;touch-action:none;user-select:none"><img id="cut-img" src="'+cutPageImg.src+'" style="width:100%;display:block;border-radius:6px;pointer-events:none"><div id="cut-band" style="position:absolute;left:0;right:0;background:rgba(42,157,143,.3);border:2px solid var(--accent2);display:none;pointer-events:none"></div></div>';
+    inner+='<div class="row" style="gap:6px;margin-bottom:6px">'+
+      [1,2,3].map(function(z){return '<button class="btn btn-xs '+(cutZoom===z?'btn-go':'btn-soft')+'" style="flex:1" onclick="setCutZoom('+z+')">'+z+'×</button>';}).join('')+
+      '</div>';
+    inner+='<div id="cut-scroll" style="overflow-x:'+(cutZoom>1?'auto':'hidden')+';-webkit-overflow-scrolling:touch">'+
+      '<div id="cut-stage" style="position:relative;touch-action:none;user-select:none;width:'+(cutZoom*100)+'%"><img id="cut-img" src="'+cutPageImg.src+'" style="width:100%;display:block;border-radius:6px;pointer-events:none"><div id="cut-band" style="position:absolute;left:0;right:0;background:rgba(42,157,143,.3);border:2px solid var(--accent2);display:none;pointer-events:none"></div></div></div>';
+    if(cutZoom>1)inner+='<div style="font-size:11px;color:var(--muted);margin-top:4px">Vergrößert — zum Verschieben am Rand seitlich wischen.</div>';
     var any=(p.sections||[]).some(function(s){return secImgs(s).length;});
     if(any){
       inner+='<div style="font-size:11px;color:var(--muted);margin-top:10px;margin-bottom:4px">Zugeordnet:</div>';
@@ -1719,6 +1724,7 @@ function renderCutTool(){
   if(cutPendingCrop)renderCutConfirm();
 }
 
+function setCutZoom(z){cutZoom=z;cutPendingCrop=null;cutSelSecs=[];renderCutTool();}
 function cutUpload(file){
   if(!file)return;
   var fr=new FileReader();
@@ -1741,18 +1747,40 @@ function cutAttachHandlers(){
   var stage=document.getElementById('cut-stage');var band=document.getElementById('cut-band');if(!stage)return;
   function pt(ev){var t=ev.touches&&ev.touches[0]?ev.touches[0]:ev;return {x:t.clientX,y:t.clientY};}
   function updateBand(){
-    var r=document.getElementById('cut-img').getBoundingClientRect();
+    var im=document.getElementById('cut-img');if(!im)return;
+    var r=im.getBoundingClientRect();
     var a=Math.min(cutY0,cutY1)-r.top,b=Math.max(cutY0,cutY1)-r.top;
     band.style.display='block';band.style.top=a+'px';band.style.height=Math.max(0,b-a)+'px';
     if(cutFullWidth()){band.style.left='0';band.style.right='0';band.style.width='';}
     else{var x=Math.min(cutX0,cutX1)-r.left,w=Math.abs(cutX1-cutX0);band.style.right='';band.style.left=x+'px';band.style.width=w+'px';}
   }
-  function down(ev){var q=pt(ev);cutDragActive=true;cutY0=q.y;cutY1=q.y;cutX0=q.x;cutX1=q.x;updateBand();ev.preventDefault();}
-  function move(ev){if(!cutDragActive)return;var q=pt(ev);cutY1=q.y;cutX1=q.x;updateBand();ev.preventDefault();}
-  function up(ev){if(!cutDragActive)return;cutDragActive=false;cutFinishDrag();ev.preventDefault();}
+  function start(ev){
+    var q=pt(ev);
+    cutDragActive=true;cutY0=q.y;cutY1=q.y;cutX0=q.x;cutX1=q.x;
+    updateBand();
+    if(ev.pointerId!==undefined&&stage.setPointerCapture){try{stage.setPointerCapture(ev.pointerId);}catch(e){}}
+    ev.preventDefault();
+  }
+  function move(ev){
+    var q=pt(ev);
+    // Kein sauberer Start registriert? Dann gilt diese Position als Start.
+    if(!cutDragActive){cutDragActive=true;cutY0=q.y;cutX0=q.x;}
+    cutY1=q.y;cutX1=q.x;updateBand();ev.preventDefault();
+  }
+  function end(ev){
+    if(!cutDragActive)return;
+    cutDragActive=false;cutFinishDrag();ev.preventDefault();
+  }
   function cancel(){cutDragActive=false;if(band)band.style.display='none';}
-  stage.ontouchstart=down;stage.ontouchmove=move;stage.ontouchend=up;stage.ontouchcancel=cancel;
-  stage.onmousedown=down;stage.onmousemove=move;stage.onmouseup=up;stage.onmouseleave=cancel;
+  if(window.PointerEvent){
+    stage.onpointerdown=start;stage.onpointermove=function(e){if(cutDragActive)move(e);};
+    stage.onpointerup=end;stage.onpointercancel=cancel;
+  }else{
+    stage.ontouchstart=start;stage.ontouchmove=function(e){if(cutDragActive)move(e);};
+    stage.ontouchend=end;stage.ontouchcancel=cancel;
+    stage.onmousedown=start;stage.onmousemove=function(e){if(cutDragActive)move(e);};
+    stage.onmouseup=end;stage.onmouseleave=cancel;
+  }
 }
 // Seitliche Bewegung unter 8 % der Bildbreite gilt als "ganze Zeile gemeint"
 function cutFullWidth(){
@@ -4583,7 +4611,7 @@ function renderSettings(){
     '<button class="btn btn-soft mt12" onclick="nav(\'home\')">← Zurück</button>'+
     '<div style="text-align:center;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">'+
       '<div style="font-size:13px;color:var(--text);font-weight:500">🎸 Übezeit v3.2</div>'+
-      '<div style="font-size:11px;color:var(--muted)">Build 2026-09-18-E</div>'+
+      '<div style="font-size:11px;color:var(--muted)">Build 2026-09-18-F</div>'+
     '</div>';
   try{renderImgStorage();}catch(e){}
 }
