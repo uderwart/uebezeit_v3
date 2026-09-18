@@ -4628,11 +4628,8 @@ function renderSettings(){
       '<div id="import-result"></div>'+
       '<div style="border-top:1px solid var(--border);margin:10px 0"></div>'+
       '<div style="font-size:12px;font-weight:600;margin-bottom:4px">🖼 Noten-Bilder</div>'+
-      '<div style="font-size:11px;color:var(--muted);margin-bottom:8px">Die Noten-Ausschnitte sind <b>nicht</b> im JSON-Backup. Sie stecken in der <b>Komplett-Sicherung</b> oben – diese Knöpfe brauchst du nur, wenn du sie einzeln bewegen willst.</div>'+
-      '<button class="btn btn-soft mb8" onclick="shareImages()">📨 Noten-Bilder senden</button>'+
-      '<div id="img-share-result" style="font-size:11px;color:var(--muted);margin-bottom:8px"></div>'+
-      '<button class="btn btn-soft mb8" onclick="exportImages()">📥 Noten-Bilder exportieren</button>'+
-      '<button class="btn btn-soft mb8" onclick="document.getElementById(\'import-img-file\').click()">📤 Noten-Bilder importieren</button>'+
+      '<div style="font-size:11px;color:var(--muted);margin-bottom:8px">Die Noten-Ausschnitte stecken in der Komplett-Sicherung oben. Der Knopf hier ist nur für alte, getrennt gespeicherte Bilder-Dateien.</div>'+
+      '<button class="btn btn-xs btn-soft mb8" onclick="document.getElementById(\'import-img-file\').click()">📤 Alte Bilder-Datei einlesen</button>'+
       '<input type="file" id="import-img-file" accept=".json" style="display:none" onchange="importImages(event)">'+
       '<div id="img-import-result" style="font-size:11px;color:var(--muted)"></div>'+
       '<div id="img-storage" style="font-size:11px;color:var(--muted);margin-top:8px">Speicher wird geprüft …</div>'+
@@ -4641,7 +4638,7 @@ function renderSettings(){
     '<button class="btn btn-soft mt12" onclick="nav(\'home\')">← Zurück</button>'+
     '<div style="text-align:center;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">'+
       '<div style="font-size:13px;color:var(--text);font-weight:500">🎸 Übezeit v3.2</div>'+
-      '<div style="font-size:11px;color:var(--muted)">Build 2026-09-18-K</div>'+
+      '<div style="font-size:11px;color:var(--muted)">Build 2026-09-18-L</div>'+
     '</div>';
   try{renderImgStorage();}catch(e){}
 }
