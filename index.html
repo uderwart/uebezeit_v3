@@ -2962,8 +2962,8 @@ var METRO_SUBS=[{v:1,l:'♩'},{v:2,l:'♪'},{v:3,l:'♪³'},{v:4,l:'♬'}];
 function metroLoadPrefs(){
   try{
     var s=JSON.parse(localStorage.getItem('uz-metro')||'{}');
-    if(s.beats===3||s.beats===4)metroBeats=s.beats;
-    if([1,2,3,4].indexOf(s.subdiv)>=0)metroSubdiv=s.subdiv;
+    if([1,2,3,4,6,8].indexOf(s.subdiv)>=0)metroSubdiv=s.subdiv;
+    if([0,3,4].indexOf(s.beats)>=0)metroBeats=s.beats;
     if(s.bpm)metroBpm=Math.max(20,Math.min(300,s.bpm));
     if(typeof s.auto==='boolean')metroAuto=s.auto;
   }catch(e){}
@@ -3016,10 +3016,11 @@ function metroScheduler(){
     var per=metroSubdiv;
     var isBeat=(metroStep%per)===0;
     var beatIdx=Math.floor(metroStep/per);
-    metroClickAt(metroNextTime,isBeat?(beatIdx===0?'accent':'beat'):'sub');
-    if(isBeat)metroVisQueue.push({t:metroNextTime,b:beatIdx});
+    var noAcc=!metroBeats;
+    metroClickAt(metroNextTime,isBeat?((!noAcc&&beatIdx===0)?'accent':'beat'):'sub');
+    if(isBeat)metroVisQueue.push({t:metroNextTime,b:noAcc?0:beatIdx});
     metroNextTime+=(60/metroBpm)/per;
-    metroStep=(metroStep+1)%(metroBeats*per);
+    metroStep=(metroStep+1)%((metroBeats||1)*per);
   }
 }
 function metroVisTick(){
@@ -3093,11 +3094,11 @@ function togglePracticeMetro(){metroToggle(true);}
 
 function metroPanelHtml(src){
   var dots='';
-  for(var i=0;i<metroBeats;i++){
+  for(var i=0;i<(metroBeats||1);i++){
     dots+='<div style="width:13px;height:13px;border-radius:50%;background:var(--border);transition:transform .06s,background .06s"></div>';
   }
-  var beatBtns=[4,3].map(function(n){
-    return '<button class="btn btn-xs '+(metroBeats===n?'btn-go':'btn-soft')+'" onclick="metroSetBeats('+n+')" style="min-width:44px">'+n+'/4</button>';
+  var beatBtns=[[4,'4/4'],[3,'3/4'],[0,'ohne']].map(function(n){
+    return '<button class="btn btn-xs '+(metroBeats===n[0]?'btn-go':'btn-soft')+'" onclick="metroSetBeats('+n[0]+')" style="min-width:44px">'+n[1]+'</button>';
   }).join('');
   var subBtns=METRO_SUBS.map(function(s){
     return '<button class="btn btn-xs '+(metroSubdiv===s.v?'btn-go':'btn-soft')+'" onclick="metroSetSubdiv('+s.v+')" style="min-width:44px;font-size:15px">'+s.l+'</button>';
@@ -4657,7 +4658,7 @@ function renderSettings(){
     '<button class="btn btn-soft mt12" onclick="nav(\'home\')">← Zurück</button>'+
     '<div style="text-align:center;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">'+
       '<div style="font-size:13px;color:var(--text);font-weight:500">🎸 Übezeit v3.2</div>'+
-      '<div style="font-size:11px;color:var(--muted)">Build 2026-09-18-M</div>'+
+      '<div style="font-size:11px;color:var(--muted)">Build 2026-09-18-N</div>'+
     '</div>';
   try{renderImgStorage();}catch(e){}
 }
