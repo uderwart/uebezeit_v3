@@ -1770,9 +1770,13 @@ function cutUnassign(id){
 function exportImages(){
   idbAll().then(function(all){
     var blob=new Blob([JSON.stringify(all)],{type:'application/json'});
-    var a=document.createElement('a');var d=new Date();
-    a.download='uebezeit-noten-'+d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate()+'.json';
-    a.href=URL.createObjectURL(blob);a.click();
+    uzDownload(blob,'uebezeit-noten-'+uzStamp()+'.json');
+  });
+}
+function shareImages(){
+  idbAll().then(function(all){
+    var blob=new Blob([JSON.stringify(all)],{type:'application/json'});
+    uzShareFile(blob,'uebezeit-noten-'+uzStamp()+'.json','img-share-result');
   });
 }
 function importImages(ev){
@@ -4416,6 +4420,8 @@ function renderSettings(){
     '</div>'+
     '<div class="card">'+
       '<div style="font-size:13px;font-weight:600;margin-bottom:8px">Daten</div>'+
+      '<button class="btn btn-soft mb8" onclick="shareData()">📨 Sicherung senden (Proton Drive …)</button>'+
+      '<div id="share-result" style="font-size:11px;color:var(--muted);margin-bottom:8px"></div>'+
       '<button class="btn btn-soft mb8" onclick="exportData()">📥 Daten exportieren (JSON)</button>'+
       '<div style="font-size:11px;color:var(--muted);margin-bottom:8px">🔒 Dein API-Key ist aus Sicherheitsgründen nicht im Backup enthalten.</div>'+
       '<button class="btn btn-soft mb8" onclick="document.getElementById(\'import-file\').click()">📤 Daten importieren</button>'+
@@ -4424,6 +4430,8 @@ function renderSettings(){
       '<div style="border-top:1px solid var(--border);margin:10px 0"></div>'+
       '<div style="font-size:12px;font-weight:600;margin-bottom:4px">🖼 Noten-Bilder</div>'+
       '<div style="font-size:11px;color:var(--muted);margin-bottom:8px">Die Noten-Ausschnitte sind <b>nicht</b> im JSON-Backup. Sichere sie separat (z. B. auf Proton Drive).</div>'+
+      '<button class="btn btn-soft mb8" onclick="shareImages()">📨 Noten-Bilder senden</button>'+
+      '<div id="img-share-result" style="font-size:11px;color:var(--muted);margin-bottom:8px"></div>'+
       '<button class="btn btn-soft mb8" onclick="exportImages()">📥 Noten-Bilder exportieren</button>'+
       '<button class="btn btn-soft mb8" onclick="document.getElementById(\'import-img-file\').click()">📤 Noten-Bilder importieren</button>'+
       '<input type="file" id="import-img-file" accept=".json" style="display:none" onchange="importImages(event)">'+
@@ -4432,8 +4440,8 @@ function renderSettings(){
     '</div>'+
     '<button class="btn btn-soft mt12" onclick="nav(\'home\')">← Zurück</button>'+
     '<div style="text-align:center;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">'+
-      '<div style="font-size:13px;color:var(--text);font-weight:500">🎸 Übezeit v3.0</div>'+
-      '<div style="font-size:11px;color:var(--muted)">Build 2026-09-02-A</div>'+
+      '<div style="font-size:13px;color:var(--text);font-weight:500">🎸 Übezeit v3.1</div>'+
+      '<div style="font-size:11px;color:var(--muted)">Build 2026-09-18-A</div>'+
     '</div>';
 }
 
@@ -4463,7 +4471,34 @@ function moveCat(ci,dir){
   save();renderSettings();
 }
 
-function exportData(){
+function uzPad2(n){return (n<10?'0':'')+n;}
+function uzStamp(){
+  var d=new Date();
+  return d.getFullYear()+'-'+uzPad2(d.getMonth()+1)+'-'+uzPad2(d.getDate())+'_'+uzPad2(d.getHours())+'-'+uzPad2(d.getMinutes());
+}
+function uzDownload(blob,name){
+  var a=document.createElement('a');
+  a.download=name;a.href=URL.createObjectURL(blob);a.click();
+}
+// Teilen-Menü von Android/iOS öffnen (Web Share API); false = nicht verfügbar
+function uzShareFile(blob,name,statusId){
+  var st=statusId?document.getElementById(statusId):null;
+  try{
+    var f=new File([blob],name,{type:'application/json'});
+    if(navigator.share&&navigator.canShare&&navigator.canShare({files:[f]})){
+      navigator.share({files:[f],title:name}).then(function(){
+        if(st){st.textContent='Gesendet.';st.style.color='var(--done)';}
+      }).catch(function(){
+        if(st){st.textContent='Abgebrochen.';st.style.color='var(--muted)';}
+      });
+      return true;
+    }
+  }catch(e){}
+  if(st){st.textContent='Senden geht in diesem Browser nicht – Datei wurde stattdessen heruntergeladen.';st.style.color='var(--muted)';}
+  uzDownload(blob,name);
+  return false;
+}
+function buildDataBackup(){
   // API-Key bewusst NICHT exportieren (Sicherheit – Backup könnte geteilt werden)
   var settingsCopy={};
   for(var k in settings){if(k!=='apiKey')settingsCopy[k]=settings[k];}
@@ -4472,14 +4507,20 @@ function exportData(){
     settings:settingsCopy,cats:CATS,rewards:rewards,lesson:lesson,
     analysisCache:analysisCache,
     lessonArchive:JSON.parse(localStorage.getItem('uz-lesson-archive')||'[]'),
-    version:'v3.0',exportDate:new Date().toISOString()
+    version:'v3.1',exportDate:new Date().toISOString()
   };
-  var blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
-  var a=document.createElement('a');
-  var d=new Date();
-  a.download='uebezeit-'+d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate()+'_'+d.getHours()+'-'+d.getMinutes()+'.json';
-  a.href=URL.createObjectURL(blob);
-  a.click();
+  return {
+    blob:new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),
+    name:'uebezeit-'+uzStamp()+'.json'
+  };
+}
+function exportData(){
+  var b=buildDataBackup();
+  uzDownload(b.blob,b.name);
+}
+function shareData(){
+  var b=buildDataBackup();
+  uzShareFile(b.blob,b.name,'share-result');
 }
 
 function importData(event){
