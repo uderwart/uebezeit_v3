@@ -1645,7 +1645,7 @@ function idbGet(id){return idbOpen().then(function(db){return new Promise(functi
 function idbDelete(id){return idbOpen().then(function(db){return new Promise(function(res){var tx=db.transaction('images','readwrite');tx.objectStore('images').delete(id);tx.oncomplete=function(){res();};});});}
 function idbAll(){return idbOpen().then(function(db){return new Promise(function(res){var out={};var tx=db.transaction('images','readonly');var c=tx.objectStore('images').openCursor();c.onsuccess=function(e){var cur=e.target.result;if(cur){out[cur.key]=cur.value;cur.continue();}else res(out);};});});}
 
-var cutPieceId=null,cutPageImg=null,cutNextBar=1,cutLastCount=0,cutPendingCrop=null,cutDragActive=false,cutY0=0,cutY1=0,cutSelSecs=[];
+var cutPieceId=null,cutPageImg=null,cutNextBar=1,cutLastCount=0,cutPendingCrop=null,cutDragActive=false,cutY0=0,cutY1=0,cutX0=0,cutX1=0,cutSelSecs=[];
 
 // Ein Bereich kann mehrere Ausschnitte tragen (seitenuebergreifende Takte).
 // Alte Daten mit einem einzelnen s.imgId werden beim Lesen still angehoben.
@@ -1695,8 +1695,8 @@ function renderCutTool(){
     inner+='<div style="font-size:12px;color:var(--muted);margin-bottom:10px">Lade eine Notenseite hoch. Danach ziehst du über jede Notenzeile (von oben nach unten), und die Zeile wird den Takten zugeordnet.</div>';
     inner+='<label class="btn btn-go" style="display:block;text-align:center">Notenseite hochladen<input type="file" accept="image/*" style="display:none" onchange="cutUpload(this.files[0])"></label>';
   }else{
-    inner+='<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Zieh über eine oder mehrere Notenzeilen (oben → unten). Danach wählst du den Bereich, zu dem der Ausschnitt gehört.</div>';
-    inner+='<div id="cut-stage" style="position:relative;touch-action:none;user-select:none"><img id="cut-img" src="'+cutPageImg.src+'" style="width:100%;display:block;border-radius:6px;pointer-events:none"><div id="cut-band" style="position:absolute;left:0;right:0;background:rgba(42,157,143,.3);border-top:2px solid var(--accent2);border-bottom:2px solid var(--accent2);display:none;pointer-events:none"></div></div>';
+    inner+='<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Senkrecht ziehen = ganze Notenzeile. Schräg ziehen = Rechteck für einzelne Takte. Danach wählst du den Bereich.</div>';
+    inner+='<div id="cut-stage" style="position:relative;touch-action:none;user-select:none"><img id="cut-img" src="'+cutPageImg.src+'" style="width:100%;display:block;border-radius:6px;pointer-events:none"><div id="cut-band" style="position:absolute;left:0;right:0;background:rgba(42,157,143,.3);border:2px solid var(--accent2);display:none;pointer-events:none"></div></div>';
     var any=(p.sections||[]).some(function(s){return secImgs(s).length;});
     if(any){
       inner+='<div style="font-size:11px;color:var(--muted);margin-top:10px;margin-bottom:4px">Zugeordnet:</div>';
@@ -1736,15 +1736,28 @@ function cutUpload(file){
   fr.readAsDataURL(file);
 }
 
+// Ziehen: senkrecht = ganze Notenzeile, schraeg = freies Rechteck (einzelne Takte)
 function cutAttachHandlers(){
   var stage=document.getElementById('cut-stage');var band=document.getElementById('cut-band');if(!stage)return;
-  function ptY(ev){var t=ev.touches&&ev.touches[0]?ev.touches[0]:ev;return t.clientY;}
-  function updateBand(){var r=document.getElementById('cut-img').getBoundingClientRect();var a=Math.min(cutY0,cutY1)-r.top,b=Math.max(cutY0,cutY1)-r.top;band.style.display='block';band.style.top=a+'px';band.style.height=Math.max(0,b-a)+'px';}
-  function down(ev){cutDragActive=true;cutY0=ptY(ev);cutY1=cutY0;updateBand();ev.preventDefault();}
-  function move(ev){if(!cutDragActive)return;cutY1=ptY(ev);updateBand();ev.preventDefault();}
+  function pt(ev){var t=ev.touches&&ev.touches[0]?ev.touches[0]:ev;return {x:t.clientX,y:t.clientY};}
+  function updateBand(){
+    var r=document.getElementById('cut-img').getBoundingClientRect();
+    var a=Math.min(cutY0,cutY1)-r.top,b=Math.max(cutY0,cutY1)-r.top;
+    band.style.display='block';band.style.top=a+'px';band.style.height=Math.max(0,b-a)+'px';
+    if(cutFullWidth()){band.style.left='0';band.style.right='0';band.style.width='';}
+    else{var x=Math.min(cutX0,cutX1)-r.left,w=Math.abs(cutX1-cutX0);band.style.right='';band.style.left=x+'px';band.style.width=w+'px';}
+  }
+  function down(ev){var q=pt(ev);cutDragActive=true;cutY0=q.y;cutY1=q.y;cutX0=q.x;cutX1=q.x;updateBand();ev.preventDefault();}
+  function move(ev){if(!cutDragActive)return;var q=pt(ev);cutY1=q.y;cutX1=q.x;updateBand();ev.preventDefault();}
   function up(ev){if(!cutDragActive)return;cutDragActive=false;cutFinishDrag();ev.preventDefault();}
   stage.ontouchstart=down;stage.ontouchmove=move;stage.ontouchend=up;
   stage.onmousedown=down;stage.onmousemove=move;stage.onmouseup=up;
+}
+// Seitliche Bewegung unter 8 % der Bildbreite gilt als "ganze Zeile gemeint"
+function cutFullWidth(){
+  var imgEl=document.getElementById('cut-img');if(!imgEl)return true;
+  var w=imgEl.getBoundingClientRect().width||1;
+  return Math.abs(cutX1-cutX0) < w*0.08;
 }
 
 function cutFinishDrag(){
@@ -1754,8 +1767,16 @@ function cutFinishDrag(){
   var a=Math.min(cutY0,cutY1),b=Math.max(cutY0,cutY1);
   var py0=Math.max(0,(a-r.top)*ratio),py1=Math.min(cutPageImg.naturalHeight,(b-r.top)*ratio);
   var hh=Math.round(py1-py0);if(hh<6)return;
-  var c=document.createElement('canvas');c.width=cutPageImg.naturalWidth;c.height=hh;
-  c.getContext('2d').drawImage(cutPageImg,0,Math.round(py0),cutPageImg.naturalWidth,hh,0,0,cutPageImg.naturalWidth,hh);
+  var px0=0,ww=cutPageImg.naturalWidth;
+  if(!cutFullWidth()){
+    var rx=cutPageImg.naturalWidth/(r.width||1);
+    var xa=Math.min(cutX0,cutX1),xb=Math.max(cutX0,cutX1);
+    px0=Math.max(0,Math.round((xa-r.left)*rx));
+    ww=Math.min(cutPageImg.naturalWidth-px0,Math.round((xb-xa)*rx));
+    if(ww<20){px0=0;ww=cutPageImg.naturalWidth;}
+  }
+  var c=document.createElement('canvas');c.width=ww;c.height=hh;
+  c.getContext('2d').drawImage(cutPageImg,px0,Math.round(py0),ww,hh,0,0,ww,hh);
   cutPendingCrop=c.toDataURL('image/jpeg',0.7);
   var pp=pieces.find(function(x){return x.id===cutPieceId;});
   if(pp&&!cutSelSecs.length){var fi=cutFirstUnassignedSecIdx(pp);if(fi>=0)cutSelSecs=[fi];}
@@ -4561,7 +4582,7 @@ function renderSettings(){
     '<button class="btn btn-soft mt12" onclick="nav(\'home\')">← Zurück</button>'+
     '<div style="text-align:center;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">'+
       '<div style="font-size:13px;color:var(--text);font-weight:500">🎸 Übezeit v3.2</div>'+
-      '<div style="font-size:11px;color:var(--muted)">Build 2026-09-18-C</div>'+
+      '<div style="font-size:11px;color:var(--muted)">Build 2026-09-18-D</div>'+
     '</div>';
   try{renderImgStorage();}catch(e){}
 }
