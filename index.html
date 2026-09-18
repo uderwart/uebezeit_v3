@@ -1892,14 +1892,16 @@ function cutMoveImg(si,k,dir){
 // Manuelles Bild-Backup (z. B. für Proton Drive)
 function exportImages(){
   idbAll().then(function(all){
+    all.__uz='bilder';
     var blob=new Blob([JSON.stringify(all)],{type:'application/json'});
-    uzDownload(blob,'uebezeit-noten-'+uzStamp()+'.json');
+    uzDownload(blob,'uebezeit-BILDER-'+uzStamp()+'.json');
   });
 }
 function shareImages(){
   idbAll().then(function(all){
+    all.__uz='bilder';
     var blob=new Blob([JSON.stringify(all)],{type:'application/json'});
-    uzShareFile(blob,'uebezeit-noten-'+uzStamp()+'.json','img-share-result');
+    uzShareFile(blob,'uebezeit-BILDER-'+uzStamp()+'.json','img-share-result');
   });
 }
 function allUsedImgIds(){
@@ -1940,7 +1942,10 @@ function importImages(ev){
   var fr=new FileReader();
   fr.onload=function(){
     var r=document.getElementById('img-import-result');
-    try{var obj=JSON.parse(fr.result);var ids=Object.keys(obj);var n=ids.length,done=0;
+    try{var obj=JSON.parse(fr.result);
+      if(obj.pieces||obj.sessions||obj.version){if(r){r.textContent='Das ist die DATEN-Sicherung. Bitte oben bei „Daten importieren" einlesen.';r.style.color='var(--stop)';}return;}
+      var ids=Object.keys(obj).filter(function(k){return k.indexOf('__')!==0;});var n=ids.length,done=0;
+      if(r)r.style.color='var(--muted)';
       if(!n){if(r)r.textContent='Keine Bilder in der Datei.';return;}
       ids.forEach(function(id){idbPut(id,obj[id]).then(function(){done++;if(done===n&&r)r.textContent=n+' Noten-Bilder importiert.';});});
     }catch(e){if(r)r.textContent='Import fehlgeschlagen.';}
@@ -4612,16 +4617,18 @@ function renderSettings(){
     '</div>'+
     '<div class="card">'+
       '<div style="font-size:13px;font-weight:600;margin-bottom:8px">Daten</div>'+
-      '<button class="btn btn-soft mb8" onclick="shareData()">📨 Sicherung senden (Proton Drive …)</button>'+
+      '<button class="btn btn-go mb8" onclick="shareAll()">📨 Komplett-Sicherung senden</button>'+
       '<div id="share-result" style="font-size:11px;color:var(--muted);margin-bottom:8px"></div>'+
-      '<button class="btn btn-soft mb8" onclick="exportData()">📥 Daten exportieren (JSON)</button>'+
+      '<button class="btn btn-soft mb8" onclick="exportAll()">📥 Komplett-Sicherung speichern</button>'+
+      '<div style="font-size:11px;color:var(--muted);margin-bottom:8px">Enthält alles: Stücke, Sessions, Einstellungen <b>und</b> die Noten-Ausschnitte. Eine Datei, ein Import.</div>'+
+      '<button class="btn btn-soft mb8" onclick="exportData()">📥 Nur Daten (ohne Bilder)</button>'+
       '<div style="font-size:11px;color:var(--muted);margin-bottom:8px">🔒 Dein API-Key ist aus Sicherheitsgründen nicht im Backup enthalten.</div>'+
-      '<button class="btn btn-soft mb8" onclick="document.getElementById(\'import-file\').click()">📤 Daten importieren</button>'+
+      '<button class="btn btn-go mb8" onclick="document.getElementById(\'import-file\').click()">📤 Sicherung einlesen</button>'+
       '<input type="file" id="import-file" accept=".json" style="display:none" onchange="importData(event)">'+
       '<div id="import-result"></div>'+
       '<div style="border-top:1px solid var(--border);margin:10px 0"></div>'+
       '<div style="font-size:12px;font-weight:600;margin-bottom:4px">🖼 Noten-Bilder</div>'+
-      '<div style="font-size:11px;color:var(--muted);margin-bottom:8px">Die Noten-Ausschnitte sind <b>nicht</b> im JSON-Backup. Sichere sie separat (z. B. auf Proton Drive).</div>'+
+      '<div style="font-size:11px;color:var(--muted);margin-bottom:8px">Die Noten-Ausschnitte sind <b>nicht</b> im JSON-Backup. Sie stecken in der <b>Komplett-Sicherung</b> oben – diese Knöpfe brauchst du nur, wenn du sie einzeln bewegen willst.</div>'+
       '<button class="btn btn-soft mb8" onclick="shareImages()">📨 Noten-Bilder senden</button>'+
       '<div id="img-share-result" style="font-size:11px;color:var(--muted);margin-bottom:8px"></div>'+
       '<button class="btn btn-soft mb8" onclick="exportImages()">📥 Noten-Bilder exportieren</button>'+
@@ -4634,7 +4641,7 @@ function renderSettings(){
     '<button class="btn btn-soft mt12" onclick="nav(\'home\')">← Zurück</button>'+
     '<div style="text-align:center;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">'+
       '<div style="font-size:13px;color:var(--text);font-weight:500">🎸 Übezeit v3.2</div>'+
-      '<div style="font-size:11px;color:var(--muted)">Build 2026-09-18-I</div>'+
+      '<div style="font-size:11px;color:var(--muted)">Build 2026-09-18-K</div>'+
     '</div>';
   try{renderImgStorage();}catch(e){}
 }
@@ -4692,21 +4699,42 @@ function uzShareFile(blob,name,statusId){
   uzDownload(blob,name);
   return false;
 }
-function buildDataBackup(){
+function buildBackupObject(){
   // API-Key bewusst NICHT exportieren (Sicherheit – Backup könnte geteilt werden)
   var settingsCopy={};
   for(var k in settings){if(k!=='apiKey')settingsCopy[k]=settings[k];}
-  var data={
+  return {
     pieces:pieces,sessions:sessions,tempoHist:tempoHist,
     settings:settingsCopy,cats:CATS,rewards:rewards,lesson:lesson,
     analysisCache:analysisCache,
     lessonArchive:JSON.parse(localStorage.getItem('uz-lesson-archive')||'[]'),
     version:'v3.2',exportDate:new Date().toISOString()
   };
+}
+function buildDataBackup(){
   return {
-    blob:new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),
-    name:'uebezeit-'+uzStamp()+'.json'
+    blob:new Blob([JSON.stringify(buildBackupObject(),null,2)],{type:'application/json'}),
+    name:'uebezeit-DATEN-'+uzStamp()+'.json'
   };
+}
+function buildFullBackup(){
+  return idbAll().then(function(imgs){
+    var data=buildBackupObject();
+    data.images=imgs;
+    data.__uz='komplett';
+    return {blob:new Blob([JSON.stringify(data)],{type:'application/json'}),
+            name:'uebezeit-KOMPLETT-'+uzStamp()+'.json'};
+  });
+}
+function exportAll(){
+  var el=document.getElementById('share-result');if(el){el.textContent='Sicherung wird gepackt …';el.style.color='var(--muted)';}
+  buildFullBackup().then(function(b){uzDownload(b.blob,b.name);if(el)el.textContent='';})
+    .catch(function(){if(el){el.textContent='Sicherung fehlgeschlagen.';el.style.color='var(--stop)';}});
+}
+function shareAll(){
+  var el=document.getElementById('share-result');if(el){el.textContent='Sicherung wird gepackt …';el.style.color='var(--muted)';}
+  buildFullBackup().then(function(b){uzShareFile(b.blob,b.name,'share-result');})
+    .catch(function(){if(el){el.textContent='Sicherung fehlgeschlagen.';el.style.color='var(--stop)';}});
 }
 function exportData(){
   var b=buildDataBackup();
@@ -4724,7 +4752,15 @@ function importData(event){
   reader.onload=function(e){
     try{
       var data=JSON.parse(e.target.result);
-      
+      if(data.images&&typeof data.images==='object'){
+        var iids=Object.keys(data.images).filter(function(k){return k.indexOf('__')!==0;});
+        iids.forEach(function(id){idbPut(id,data.images[id]);});
+      }
+      if(data.__uz==='bilder'||(!data.pieces&&!data.sessions&&!data.settings)){
+        var rr=document.getElementById('import-result');
+        if(rr){rr.textContent='Das ist die BILDER-Sicherung. Bitte weiter unten bei „Noten-Bilder importieren" einlesen.';rr.style.color='var(--stop)';}
+        return;
+      }
       // Detect v2 format (has CATS instead of cats, pieces without status)
       var isV2=data.CATS&&!data.cats;
       
