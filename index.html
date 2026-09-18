@@ -2465,13 +2465,21 @@ function renderPractice(){
       var sh=document.getElementById('practice-sheet');if(!sh)return;
       // Ausschnitte im Groessenverhaeltnis der Vorlage zeigen: ein einzelner Takt
       // darf nicht so breit dargestellt werden wie eine ganze Notenzeile.
-      var metas=all.map(function(d){return d?{d:d,w:0}:null;});
+      var metas=all.map(function(d){return d?{d:d,w:0,h:0}:null;});
       var pend=0,done=function(){
         var mx=0;metas.forEach(function(m){if(m&&m.w>mx)mx=m.w;});
+        var cw=sh.clientWidth||360;
+        var cap=Math.max(160,Math.round((window.innerHeight||700)*0.32));
         var h='';
         metas.forEach(function(m,k){
           if(!m)return;
-          var pc=mx?Math.max(12,Math.round(m.w/mx*100)):100;
+          var pc=mx?Math.max(12,m.w/mx*100):100;
+          // Hohe Ausschnitte (viel Leerraum zwischen Noten und TAB) nicht den Schirm fluten lassen
+          if(m.h){
+            var dw=pc/100*cw, dh=dw*m.h/m.w;
+            if(dh>cap)pc=(cap*m.w/m.h)/cw*100;
+          }
+          pc=Math.max(12,Math.min(100,Math.round(pc)));
           h+='<img src="'+m.d+'" onclick="openSheetZoom(\''+ids[k]+'\')" style="width:'+pc+'%;border:1px solid var(--border);border-radius:8px;margin-top:'+(k?'4px':'8px')+';cursor:pointer;display:block">';
         });
         if(h)h+='<div style="text-align:center;font-size:11px;color:var(--muted);margin-top:2px">'+esc(sec.name)+' · 🔍 tippen zum Vergrößern</div>';
@@ -2482,7 +2490,7 @@ function renderPractice(){
       metas.forEach(function(m){
         if(!m)return;
         var im=new Image();
-        im.onload=function(){m.w=im.naturalWidth;if(--pend===0)done();};
+        im.onload=function(){m.w=im.naturalWidth;m.h=im.naturalHeight;if(--pend===0)done();};
         im.onerror=function(){if(--pend===0)done();};
         im.src=m.d;
       });
@@ -4626,7 +4634,7 @@ function renderSettings(){
     '<button class="btn btn-soft mt12" onclick="nav(\'home\')">← Zurück</button>'+
     '<div style="text-align:center;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">'+
       '<div style="font-size:13px;color:var(--text);font-weight:500">🎸 Übezeit v3.2</div>'+
-      '<div style="font-size:11px;color:var(--muted)">Build 2026-09-18-G</div>'+
+      '<div style="font-size:11px;color:var(--muted)">Build 2026-09-18-H</div>'+
     '</div>';
   try{renderImgStorage();}catch(e){}
 }
