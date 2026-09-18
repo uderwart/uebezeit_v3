@@ -4664,7 +4664,7 @@ function renderSettings(){
     '<button class="btn btn-soft mt12" onclick="nav(\'home\')">← Zurück</button>'+
     '<div style="text-align:center;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">'+
       '<div style="font-size:13px;color:var(--text);font-weight:500">🎸 Übezeit v3.1</div>'+
-      '<div style="font-size:11px;color:var(--muted)">Build 2026-09-18-B</div>'+
+      '<div style="font-size:11px;color:var(--muted)">Build 2026-09-18-C</div>'+
     '</div>';
 }
 
@@ -4700,8 +4700,13 @@ function uzStamp(){
   return d.getFullYear()+'-'+uzPad2(d.getMonth()+1)+'-'+uzPad2(d.getDate())+'_'+uzPad2(d.getHours())+'-'+uzPad2(d.getMinutes());
 }
 function uzDownload(blob,name){
+  var url=URL.createObjectURL(blob);
   var a=document.createElement('a');
-  a.download=name;a.href=URL.createObjectURL(blob);a.click();
+  a.href=url;a.download=name;
+  a.style.display='none';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function(){document.body.removeChild(a);URL.revokeObjectURL(url);},200);
 }
 // Teilen-Menü von Android/iOS öffnen (Web Share API); false = nicht verfügbar
 function uzShareFile(blob,name,statusId){
