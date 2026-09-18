@@ -1647,9 +1647,19 @@ function idbAll(){return idbOpen().then(function(db){return new Promise(function
 
 var cutPieceId=null,cutPageImg=null,cutNextBar=1,cutLastCount=0,cutPendingCrop=null,cutDragActive=false,cutY0=0,cutY1=0,cutSelSecs=[];
 
+// Ein Bereich kann mehrere Ausschnitte tragen (seitenuebergreifende Takte).
+// Alte Daten mit einem einzelnen s.imgId werden beim Lesen still angehoben.
+function secImgs(s){
+  if(!s)return [];
+  if(!s.imgIds||!s.imgIds.length){
+    s.imgIds=s.imgId?[s.imgId]:[];
+    if(s.imgId)delete s.imgId;
+  }
+  return s.imgIds;
+}
 function cutFirstUnassignedSecIdx(p){
   var secs=p.sections||[];
-  for(var i=0;i<secs.length;i++){if(!secs[i].imgId)return i;}
+  for(var i=0;i<secs.length;i++){if(!secImgs(secs[i]).length)return i;}
   return secs.length?0:-1;
 }
 function cutToggleSec(i){
@@ -1659,7 +1669,7 @@ function cutToggleSec(i){
 }
 
 function cutFirstUnassignedBar(p){
-  var rs=(p.sections||[]).map(function(s){var r=parseBarRange(s.name,9999);return (r&&r.end<99999)?{start:r.start,img:s.imgId}:null;}).filter(Boolean).sort(function(a,b){return a.start-b.start;});
+  var rs=(p.sections||[]).map(function(s){var r=parseBarRange(s.name,9999);return (r&&r.end<99999)?{start:r.start,img:secImgs(s).length}:null;}).filter(Boolean).sort(function(a,b){return a.start-b.start;});
   for(var i=0;i<rs.length;i++){if(!rs[i].img)return rs[i].start;}
   return rs.length?rs[rs.length-1].start:1;
 }
@@ -1687,12 +1697,20 @@ function renderCutTool(){
   }else{
     inner+='<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Zieh über eine oder mehrere Notenzeilen (oben → unten). Danach wählst du den Bereich, zu dem der Ausschnitt gehört.</div>';
     inner+='<div id="cut-stage" style="position:relative;touch-action:none;user-select:none"><img id="cut-img" src="'+cutPageImg.src+'" style="width:100%;display:block;border-radius:6px;pointer-events:none"><div id="cut-band" style="position:absolute;left:0;right:0;background:rgba(42,157,143,.3);border-top:2px solid var(--accent2);border-bottom:2px solid var(--accent2);display:none;pointer-events:none"></div></div>';
-    var assigned={};
-    (p.sections||[]).forEach(function(s){if(s.imgId){assigned[s.imgId]=assigned[s.imgId]||[];assigned[s.imgId].push(s.name);}});
-    var keys=Object.keys(assigned);
-    if(keys.length){
+    var any=(p.sections||[]).some(function(s){return secImgs(s).length;});
+    if(any){
       inner+='<div style="font-size:11px;color:var(--muted);margin-top:10px;margin-bottom:4px">Zugeordnet:</div>';
-      keys.forEach(function(id){inner+='<div style="display:flex;align-items:center;gap:6px;font-size:11px;padding:2px 0"><span style="flex:1">'+esc(assigned[id].join(', '))+'</span><button class="rm-btn" onclick="cutUnassign(\''+id+'\')">×</button></div>';});
+      (p.sections||[]).forEach(function(s,si){
+        var ids=secImgs(s);if(!ids.length)return;
+        inner+='<div style="font-size:11px;font-weight:600;margin-top:6px">'+esc(s.name||('Bereich '+(si+1)))+'</div>';
+        ids.forEach(function(id,k){
+          inner+='<div style="display:flex;align-items:center;gap:6px;font-size:11px;padding:2px 0 2px 8px">'+
+            '<span style="flex:1;color:var(--muted)">Ausschnitt '+(k+1)+'</span>'+
+            (k>0?'<button class="btn btn-xs btn-soft" style="width:auto;padding:2px 6px" onclick="cutMoveImg('+si+','+k+',-1)">↑</button>':'')+
+            (k<ids.length-1?'<button class="btn btn-xs btn-soft" style="width:auto;padding:2px 6px" onclick="cutMoveImg('+si+','+k+',1)">↓</button>':'')+
+            '<button class="rm-btn" onclick="cutRemoveImg('+si+','+k+')">×</button></div>';
+        });
+      });
     }
     inner+='<label class="btn btn-xs btn-soft mt8" style="display:block;text-align:center">Andere Seite hochladen<input type="file" accept="image/*" style="display:none" onchange="cutUpload(this.files[0])"></label>';
   }
@@ -1751,14 +1769,15 @@ function renderCutConfirm(){
   var c=document.getElementById('cut-confirm');
   if(!c){c=document.createElement('div');c.id='cut-confirm';c.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:401;display:flex;justify-content:center';ov.appendChild(c);}
   var list='';
+  var hasImgs=cutSelSecs.some(function(i){return secs[i]&&secImgs(secs[i]).length;});
   if(!secs.length){
     list='<div style="font-size:12px;color:var(--stop);text-align:center;padding:6px 0">Dieses Stück hat noch keine Takt-Bereiche. Lege sie zuerst im Stück an.</div>';
   }else{
     secs.forEach(function(s,i){
-      var on=cutSelSecs.indexOf(i)>=0;
+      var on=cutSelSecs.indexOf(i)>=0;var nimg=secImgs(s).length;
       list+='<button onclick="cutToggleSec('+i+')" style="display:block;width:100%;text-align:left;min-height:44px;margin-bottom:6px;padding:8px 10px;border-radius:8px;font-size:14px;'+
         'border:2px solid '+(on?'var(--accent2)':'var(--border)')+';background:'+(on?'rgba(42,157,143,.15)':'var(--card)')+';color:var(--text)">'+
-        (on?'✓ ':'　')+esc(s.name||('Bereich '+(i+1)))+(s.imgId?' <span style="font-size:11px;color:var(--muted)">· hat schon einen Ausschnitt</span>':'')+'</button>';
+        (on?'✓ ':'　')+esc(s.name||('Bereich '+(i+1)))+(nimg?' <span style="font-size:11px;color:var(--muted)">· '+nimg+' Ausschnitt'+(nimg>1?'e':'')+'</span>':'')+'</button>';
     });
   }
   c.innerHTML='<div style="background:var(--bg);width:100%;max-width:480px;border-top:1px solid var(--border);padding:12px;box-shadow:0 -4px 16px rgba(0,0,0,.2);max-height:80vh;overflow:auto">'+
@@ -1766,12 +1785,15 @@ function renderCutConfirm(){
     '<div style="font-size:12px;color:var(--muted);margin-bottom:6px">Zu welchem Bereich gehört dieser Ausschnitt?</div>'+
     list+
     '<div id="cut-warn" style="font-size:11px;color:var(--stop);margin-bottom:6px"></div>'+
-    '<div class="row" style="gap:8px"><button class="btn btn-xs btn-soft" onclick="cutCancelPending()" style="flex:1">Verwerfen</button><button class="btn btn-xs btn-go" onclick="cutAssignConfirm()" style="flex:1">✓ Übernehmen</button></div>'+
+    (hasImgs?'<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Ein gewählter Bereich hat schon Ausschnitte.</div>'+
+      '<div class="row" style="gap:8px;margin-bottom:6px"><button class="btn btn-xs btn-go" onclick="cutAssignConfirm(0)" style="flex:1">+ Anhängen</button><button class="btn btn-xs btn-soft" onclick="cutAssignConfirm(1)" style="flex:1">Alle ersetzen</button></div>'+
+      '<button class="btn btn-xs btn-soft" onclick="cutCancelPending()">Verwerfen</button>'
+     :'<div class="row" style="gap:8px"><button class="btn btn-xs btn-soft" onclick="cutCancelPending()" style="flex:1">Verwerfen</button><button class="btn btn-xs btn-go" onclick="cutAssignConfirm(0)" style="flex:1">✓ Übernehmen</button></div>')+
   '</div>';
 }
 function cutCancelPending(){cutPendingCrop=null;cutSelSecs=[];var c=document.getElementById('cut-confirm');if(c)c.remove();var b=document.getElementById('cut-band');if(b)b.style.display='none';}
 
-function cutAssignConfirm(){
+function cutAssignConfirm(replace){
   var p=pieces.find(function(x){return x.id===cutPieceId;});if(!p||!cutPendingCrop)return;
   if(!cutSelSecs.length){
     var w=document.getElementById('cut-warn');
@@ -1783,14 +1805,14 @@ function cutAssignConfirm(){
   idbPut(id,cutPendingCrop).then(function(){
     var freed=[];
     chosen.forEach(function(i){
-      var s=(p.sections||[])[i];if(!s)return;
-      if(s.imgId&&s.imgId!==id)freed.push(s.imgId);
-      s.imgId=id;
+      var sec=(p.sections||[])[i];if(!sec)return;
+      var ids=secImgs(sec);
+      if(replace){freed=freed.concat(ids);sec.imgIds=[id];}
+      else if(ids.indexOf(id)<0){ids.push(id);}
     });
     save();
-    // nicht mehr verwendete Bilder aus dem Speicher werfen
     freed.forEach(function(old){
-      var still=(p.sections||[]).some(function(s){return s.imgId===old;});
+      var still=(p.sections||[]).some(function(x){return secImgs(x).indexOf(old)>=0;});
       if(!still)idbDelete(old);
     });
     cutPendingCrop=null;cutSelSecs=[];
@@ -1799,13 +1821,24 @@ function cutAssignConfirm(){
     renderCutTool();
   }).catch(function(){alert('Bild konnte nicht gespeichert werden (Speicher voll?).');});
 }
-function cutUnassign(id){
+function cutRemoveImg(si,k){
   var p=pieces.find(function(x){return x.id===cutPieceId;});if(!p)return;
-  (p.sections||[]).forEach(function(s){if(s.imgId===id)delete s.imgId;});
-  save();idbDelete(id);
-  cutSelSecs=[];
+  var sec=(p.sections||[])[si];if(!sec)return;
+  var ids=secImgs(sec);var gone=ids.splice(k,1)[0];
+  save();
+  var still=(p.sections||[]).some(function(x){return secImgs(x).indexOf(gone)>=0;});
+  if(!still)idbDelete(gone);
   renderCutTool();
 }
+function cutMoveImg(si,k,dir){
+  var p=pieces.find(function(x){return x.id===cutPieceId;});if(!p)return;
+  var sec=(p.sections||[])[si];if(!sec)return;
+  var ids=secImgs(sec);var j=k+dir;
+  if(j<0||j>=ids.length)return;
+  var t=ids[k];ids[k]=ids[j];ids[j]=t;
+  save();renderCutTool();
+}
+
 
 // Manuelles Bild-Backup (z. B. für Proton Drive)
 function exportImages(){
@@ -1819,6 +1852,39 @@ function shareImages(){
     var blob=new Blob([JSON.stringify(all)],{type:'application/json'});
     uzShareFile(blob,'uebezeit-noten-'+uzStamp()+'.json','img-share-result');
   });
+}
+function allUsedImgIds(){
+  var used={};
+  pieces.forEach(function(p){(p.sections||[]).forEach(function(s){secImgs(s).forEach(function(id){used[id]=1;});});});
+  return used;
+}
+function renderImgStorage(){
+  var el=document.getElementById('img-storage');if(!el)return;
+  idbAll().then(function(all){
+    var ids=Object.keys(all),bytes=0,orph=0,ob=0;
+    var used=allUsedImgIds();
+    ids.forEach(function(id){
+      var n=String(all[id]||'').length;bytes+=n;
+      if(!used[id]){orph++;ob+=n;}
+    });
+    var mb=(bytes/1048576).toFixed(1);
+    var txt='🖼 '+ids.length+' Ausschnitte · '+mb+' MB belegt';
+    if(bytes>8388608)txt+=' <b style="color:var(--stop)">– viel</b>';
+    if(orph)txt+='<br>'+orph+' davon gehören zu keinem Bereich mehr ('+(ob/1048576).toFixed(1)+' MB) '+
+      '<button class="btn btn-xs btn-soft" style="width:auto;padding:2px 8px;margin-left:4px" onclick="cleanupImages()">Aufräumen</button>';
+    el.innerHTML=txt;
+  }).catch(function(){el.textContent='Speicherstand nicht lesbar.';});
+}
+function cleanupImages(){
+  var el=document.getElementById('img-storage');if(el)el.textContent='Räume auf …';
+  idbAll().then(function(all){
+    var used=allUsedImgIds();
+    var dead=Object.keys(all).filter(function(id){return !used[id];});
+    return Promise.all(dead.map(function(id){return idbDelete(id);})).then(function(){return dead.length;});
+  }).then(function(n){
+    if(el)el.textContent=n+' verwaiste Ausschnitte gelöscht.';
+    setTimeout(renderImgStorage,900);
+  }).catch(function(){if(el)el.textContent='Aufräumen fehlgeschlagen.';});
 }
 function importImages(ev){
   var f=ev.target.files[0];if(!f)return;
@@ -2344,7 +2410,19 @@ function renderPractice(){
     '<div id="rounds-display" style="margin-top:8px"></div>';
   updateRoundsDisplay();
   metroRenderPanel();
-  if(sec&&sec.imgId){idbGet(sec.imgId).then(function(d){var sh=document.getElementById('practice-sheet');if(sh&&d)sh.innerHTML='<img src="'+d+'" onclick="openSheetZoom(\''+sec.imgId+'\')" style="width:100%;border:1px solid var(--border);border-radius:8px;margin-top:8px;cursor:pointer"><div style="text-align:center;font-size:11px;color:var(--muted);margin-top:2px">'+esc(sec.name)+' · 🔍 tippen zum Vergrößern</div>';}).catch(function(){});}
+  if(sec&&secImgs(sec).length){
+    var ids=secImgs(sec);
+    Promise.all(ids.map(function(id){return idbGet(id).catch(function(){return null;});})).then(function(all){
+      var sh=document.getElementById('practice-sheet');if(!sh)return;
+      var h='';
+      all.forEach(function(d,k){
+        if(!d)return;
+        h+='<img src="'+d+'" onclick="openSheetZoom(\''+ids[k]+'\')" style="width:100%;border:1px solid var(--border);border-radius:8px;margin-top:'+(k?'4px':'8px')+';cursor:pointer">';
+      });
+      if(h)h+='<div style="text-align:center;font-size:11px;color:var(--muted);margin-top:2px">'+esc(sec.name)+' · 🔍 tippen zum Vergrößern</div>';
+      sh.innerHTML=h;
+    }).catch(function(){});
+  }
 }
 
 function updatePracticeTimer(){
@@ -4477,13 +4555,15 @@ function renderSettings(){
       '<button class="btn btn-soft mb8" onclick="document.getElementById(\'import-img-file\').click()">📤 Noten-Bilder importieren</button>'+
       '<input type="file" id="import-img-file" accept=".json" style="display:none" onchange="importImages(event)">'+
       '<div id="img-import-result" style="font-size:11px;color:var(--muted)"></div>'+
+      '<div id="img-storage" style="font-size:11px;color:var(--muted);margin-top:8px">Speicher wird geprüft …</div>'+
       '<button class="btn btn-stop mt8" onclick="resetAll()">Komplett-Reset</button>'+
     '</div>'+
     '<button class="btn btn-soft mt12" onclick="nav(\'home\')">← Zurück</button>'+
     '<div style="text-align:center;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">'+
-      '<div style="font-size:13px;color:var(--text);font-weight:500">🎸 Übezeit v3.1</div>'+
-      '<div style="font-size:11px;color:var(--muted)">Build 2026-09-18-B</div>'+
+      '<div style="font-size:13px;color:var(--text);font-weight:500">🎸 Übezeit v3.2</div>'+
+      '<div style="font-size:11px;color:var(--muted)">Build 2026-09-18-C</div>'+
     '</div>';
+  try{renderImgStorage();}catch(e){}
 }
 
 function toggleDay(d){
@@ -4548,7 +4628,7 @@ function buildDataBackup(){
     settings:settingsCopy,cats:CATS,rewards:rewards,lesson:lesson,
     analysisCache:analysisCache,
     lessonArchive:JSON.parse(localStorage.getItem('uz-lesson-archive')||'[]'),
-    version:'v3.1',exportDate:new Date().toISOString()
+    version:'v3.2',exportDate:new Date().toISOString()
   };
   return {
     blob:new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),
