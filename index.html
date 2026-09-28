@@ -499,6 +499,9 @@ function getSecLast(pName,sName){return getLast(secKey(pName,sName));}
 // Zuletzt geuebte Unterteilung (Viertel bleibt Bezugsgroesse, dies ist reine Dokumentation)
 function getLastSub(n){var h=tempoHist[n]||[];for(var i=h.length-1;i>=0;i--){if(h[i].sub)return h[i].sub;}return 0;}
 function getSecLastSub(pName,sName){return getLastSub(secKey(pName,sName));}
+// Zuletzt benutzte Taktart und Betonung desselben Takt-Bereichs
+function getLastMetro(n){var h=tempoHist[n]||[];for(var i=h.length-1;i>=0;i--){if(typeof h[i].beats==='number')return {beats:h[i].beats,noAcc:!!h[i].noAcc};}return null;}
+function getSecLastMetro(pName,sName){return getLastMetro(secKey(pName,sName));}
 var SUB_LABEL={1:'Viertel ♩',2:'Achtel ♪',3:'Triolen ♪³',4:'Sechzehntel ♬',6:'Sextolen 6',8:'Zweiunddreißigstel 8'};
 var SUB_SHORT={1:'♩',2:'♪',3:'♪³',4:'♬',6:'6',8:'8'};
 function subLabel(v){return SUB_LABEL[v]||'';}
@@ -2284,7 +2287,7 @@ function startPracticeFromDetail(pid,si){
   practicing=true;
   lastTickTs=null;
   // Reset session timer only if not in a plan session
-  if(!planActive){sessionTotalElapsed=0;timeUpShown=false;practiceTargetMin=settings.sessionMin||45;}
+  if(!planActive){sessionTotalElapsed=0;timeUpShown=false;practiceTargetMin=settings.sessionMin||45;pomoWorkElapsed=0;pomoExtraSec=0;}
   pomoHintMin=0;
   if(pomoLastWorkTs&&Date.now()-pomoLastWorkTs>15*60*1000){pomoWorkElapsed=0;pomoExtraSec=0;}
   
@@ -2311,7 +2314,7 @@ function startWholepiece(pid){
   rounds=[];roundStart=null;practiceSubRestored=false;
   practicing=true;
   lastTickTs=null;
-  if(!planActive){sessionTotalElapsed=0;timeUpShown=false;}
+  if(!planActive){sessionTotalElapsed=0;timeUpShown=false;pomoWorkElapsed=0;pomoExtraSec=0;}
   pomoHintMin=0;
   if(pomoLastWorkTs&&Date.now()-pomoLastWorkTs>15*60*1000){pomoWorkElapsed=0;pomoExtraSec=0;}
   
@@ -2428,7 +2431,12 @@ function renderPractice(){
   if(!isPlay&&sec){
     var lastBpm=getSecLast(p.name,sec.name);
     var lastSub=getSecLastSub(p.name,sec.name);
-    if(lastSub&&!practiceSubRestored){metroSubdiv=lastSub;practiceSubRestored=true;try{metroSavePrefs();}catch(e){}}
+    var lastMet=getSecLastMetro(p.name,sec.name);
+    if(!practiceSubRestored){
+      if(lastSub)metroSubdiv=lastSub;
+      if(lastMet){metroBeats=lastMet.beats;metroNoAccent=lastMet.noAcc;}
+      if(lastSub||lastMet){practiceSubRestored=true;try{metroSavePrefs();}catch(e){}}
+    }
     tempoHtml='<div class="card" style="padding:12px">'+
       '<div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:8px">'+
         '<button class="tempo-btn" onclick="adjTempo(-5)">-5</button>'+
@@ -2442,7 +2450,8 @@ function renderPractice(){
         (lastBpm?'<button class="btn btn-xs btn-go" onclick="setTempoVal('+lastBpm+')">Letztes '+lastBpm+'</button>':'')+
         (sec.targetBpm?'<button class="btn btn-xs btn-primary" onclick="setTempoVal('+sec.targetBpm+')">Ziel '+sec.targetBpm+'</button>':'')+
       '</div>'+
-      (lastSub?'<div style="text-align:center;font-size:11px;color:var(--muted);margin-top:8px">Zuletzt geübt in '+subLabel(lastSub)+'</div>':'')+
+      ((lastSub||lastMet)?'<div style="text-align:center;font-size:11px;color:var(--muted);margin-top:8px">Zuletzt geübt: '+
+        [lastMet?(lastMet.beats+'/4'):'',lastSub?subLabel(lastSub):'',(lastMet&&lastMet.noAcc)?'ohne Betonung':''].filter(Boolean).join(' · ')+'</div>':'')+
     '</div>';
   }
   
@@ -2750,7 +2759,7 @@ function stopPractice(abort){
         var key=secKey(p.name,sec.name);
         if(!tempoHist[key])tempoHist[key]=[];
         var lead=rounds.slice().sort(function(a,b){return (b.seconds||0)-(a.seconds||0);})[0];
-        tempoHist[key].push({date:new Date().toISOString(),bpm:maxBpm,sub:(lead&&lead.sub)||1});
+        tempoHist[key].push({date:new Date().toISOString(),bpm:maxBpm,sub:(lead&&lead.sub)||1,beats:metroBeats,noAcc:metroNoAccent});
       }
       
       var sec=practiceSectionIdx>=0?(p.sections||[])[practiceSectionIdx]:null;
@@ -4916,7 +4925,7 @@ function renderSettings(){
     '<button class="btn btn-soft mt12" onclick="nav(\'home\')">← Zurück</button>'+
     '<div style="text-align:center;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">'+
       '<div style="font-size:13px;color:var(--text);font-weight:500">🎸 Übezeit v3.3</div>'+
-      '<div style="font-size:11px;color:var(--muted)">Build 2026-09-18-P</div>'+
+      '<div style="font-size:11px;color:var(--muted)">Build 2026-09-18-R</div>'+
     '</div>';
   try{renderImgStorage();}catch(e){}
 }
